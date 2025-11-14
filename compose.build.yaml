@@ -1,0 +1,6 @@
+﻿services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${DH_USER}/${APP_REPO}:${APP_TAG}

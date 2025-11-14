@@ -1,0 +1,15 @@
+.git
+.gitignore
+**/.env
+node_modules
+vendor
+
+# ВАЖНО: исключаем проблемный линк и runtime-хранилище
+public/storage
+storage
+
+tests
+*.md
+*.log
+docker-compose*.yml
+# НЕ исключай папку docker/ — она нужна для php.ini

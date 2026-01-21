@@ -7,19 +7,90 @@
 
   <style>
     :root {
-      --bg: #f6f7fb;
-      --card: #ffffff;
-      --text: #1f2937;
-      --muted: #6b7280;
-      --link: #2563eb;
-      --link-hover: #1d4ed8;
-      --border: #e5e7eb;
-      --ok: #16a34a;
-      --no: #dc2626;
-      --primary-bg: #2563eb;
-      --secondary-bg: #4b5563;
-      --danger-bg: #dc2626;
-    }
+    --bg: #f6f7fb;
+    --card: #ffffff;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --link: #2563eb;
+    --link-hover: #1d4ed8;
+    --border: #e5e7eb;
+    --ok: #16a34a;
+    --no: #dc2626;
+    --primary-bg: #2563eb;
+    --secondary-bg: #4b5563;
+    --danger-bg: #dc2626;
+}
+
+/* Общие стили для формы */
+.form-container {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 20px;
+    background-color: var(--card);
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Заголовок формы */
+h2 {
+    text-align: center;
+    color: var(--text);
+    font-size: 24px;
+    margin-bottom: 20px;
+}
+
+/* Стили для полей ввода и выпадающих списков */
+input[type="text"], select, textarea {
+    width: 100%;
+    padding: 12px;
+    margin-bottom: 15px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    font-size: 16px;
+    transition: all 0.3s ease-in-out;
+}
+
+input[type="text"]:focus, select:focus, textarea:focus {
+    border-color: var(--primary-bg);
+    outline: none;
+}
+
+/* Стилизация чекбокса */
+input[type="checkbox"] {
+    margin-right: 10px;
+}
+
+/* Кнопка */
+button {
+    width: 100%;
+    padding: 12px;
+    background-color: var(--primary-bg);
+    color: white;
+    border: none;
+    border-radius: 5px;
+    font-size: 18px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+/* Наведение на кнопку */
+button:hover {
+    background-color: var(--link-hover);
+}
+
+/* Стилизация контейнера для элементов формы */
+.form-group {
+    margin-bottom: 20px;
+}
+
+/* Отступы и выравнивание для меток */
+label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: bold;
+    color: var(--text);
+}
+
 
     * { box-sizing: border-box; }
 
@@ -236,158 +307,121 @@
 
   <div class="wrap">
     @if(session('status'))
-      <div class="alert alert-ok">
-        {{ session('status') }}
-      </div>
+        <div class="alert alert-ok">
+            {{ session('status') }}
+        </div>
     @endif
 
     @if($errors->any())
-      <div class="alert alert-error">
-        <ul style="margin:0; padding-left:18px;">
-          @foreach($errors->all() as $error)
-            <li>{{ $error }}</li>
-          @endforeach
-        </ul>
-      </div>
+        <div class="alert alert-error">
+            <ul>
+                @foreach($errors->all() as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
+            </ul>
+        </div>
     @endif
 
     <div class="card">
-      <h2>{{ $pageTitle }}</h2>
+        <h2>{{ $pageTitle }}</h2>
 
-      <form method="POST"
-            action="{{ $isEdit
-                        ? route('admin.devices.update', ['type' => $type, 'id' => $device->id])
-                        : route('admin.devices.store') }}">
-        @csrf
-        @if($isEdit)
-          @method('PATCH')
-        @endif
+        <form method="POST"
+              action="{{ isset($device)
+                    ? route('admin.devices.update', ['type' => $type, 'id' => $device->id])
+                    : route('admin.devices.store') }}">
 
-        <div class="form-grid">
-          {{-- Тип устройства --}}
-          <div class="form-row">
-            <label for="device_type">Тип устройства</label>
-            <select id="device_type" name="device_type" required {{ $isEdit ? 'disabled' : '' }}>
-              <option value="controller" {{ $currentType === 'controller' ? 'selected' : '' }}>Контроллер</option>
-              <option value="camera"     {{ $currentType === 'camera' ? 'selected' : '' }}>Камера</option>
-            </select>
-            @if($isEdit)
-              <input type="hidden" name="device_type" value="{{ $currentType }}">
+            @csrf
+            @if(isset($device))
+                @method('PUT')
             @endif
-            @error('device_type')
-              <div class="form-error">{{ $message }}</div>
-            @enderror
-          </div>
 
-          <div class="form-row-inline">
-            {{-- IP --}}
-            <div class="form-row">
-              <label for="ip_address">IP адрес</label>
-              <input type="text"
-                     id="ip_address"
-                     name="ip_address"
-                     value="{{ old('ip_address', $isEdit ? $device->ip : '') }}"
-                     required>
-              @error('ip_address')
-                <div class="form-error">{{ $message }}</div>
-              @enderror
+            @if(!isset($device))
+                <div class="form-group">
+                    <label for="device_type">Тип устройства</label>
+                    <select id="device_type" name="device_type" required>
+                        <option value="controller" {{ old('device_type') === 'controller' ? 'selected' : '' }}>Контроллер</option>
+                        <option value="camera" {{ old('device_type') === 'camera' ? 'selected' : '' }}>Камера</option>
+                    </select>
+                </div>
+            @else
+                <div class="form-group">
+                    <label>Тип устройства</label>
+                    <p class="muted-text" style="margin: 0;">
+                        {{ $type === 'controller' ? 'Контроллер' : 'Камера' }}
+                    </p>
+                    <input type="hidden" name="device_type" value="{{ $type }}">
+                </div>
+            @endif
+
+            <div class="form-group">
+                <label for="ip_address">IP адрес</label>
+                <input type="text" id="ip_address" name="ip_address"
+                       value="{{ old('ip_address', $device->ip ?? '') }}" required>
             </div>
 
-            {{-- Порт --}}
-            <div class="form-row">
-              <label for="Port">Порт</label>
-              <input type="number"
-                     id="Port"
-                     name="Port"
-                     min="1"
-                     max="65535"
-                     value="{{ old('Port', $isEdit ? $device->port : '') }}"
-                     required>
-              @error('Port')
-                <div class="form-error">{{ $message }}</div>
-              @enderror
-            </div>
-          </div>
-
-          <div class="form-row-inline">
-            {{-- Логин --}}
-            <div class="form-row">
-              <label for="Login">Логин</label>
-              <input type="text"
-                     id="Login"
-                     name="Login"
-                     value="{{ old('Login', $isEdit ? $device->login : '') }}"
-                     required>
-              @error('Login')
-                <div class="form-error">{{ $message }}</div>
-              @enderror
+            <div class="form-group">
+                <label for="Port">Порт</label>
+                <input type="number" id="Port" name="Port"
+                       value="{{ old('Port', $device->port ?? 80) }}"
+                       min="1" max="65535" required>
             </div>
 
-            {{-- Пароль --}}
-            <div class="form-row">
-              <label for="Password">Пароль</label>
-              <input type="password"
-                     id="Password"
-                     name="Password"
-                     value="">
-              @error('Password')
-                <div class="form-error">{{ $message }}</div>
-              @enderror
+            <div class="form-group">
+                <label for="Login">Логин</label>
+                <input type="text" id="Login" name="Login"
+                       value="{{ old('Login', $device->login ?? '') }}" maxlength="100" required>
             </div>
-          </div>
 
-          {{-- Локация --}}
-          <div class="form-row">
-            <label for="Location">Локация (описание)</label>
-            <input type="text"
-                   id="Location"
-                   name="Location"
-                   value="{{ old('Location', $isEdit ? $device->location : '') }}">
-            @error('Location')
-              <div class="form-error">{{ $message }}</div>
-            @enderror
-          </div>
-
-          
-
-          {{-- Направление (для камеры) --}}
-          <div class="form-row" id="camera_direction_row">
-            <label for="Direction">Направление (для камеры)</label>
-            <select id="Direction" name="Direction">
-              <option value="entry" {{ $currentDirection === 'entry' ? 'selected' : '' }}>Вход</option>
-              <option value="exit"  {{ $currentDirection === 'exit'  ? 'selected' : '' }}>Выход</option>
-              <option value="other" {{ $currentDirection === 'other' ? 'selected' : '' }}>Другое</option>
-            </select>
-            @error('Direction')
-              <div class="form-error">{{ $message }}</div>
-            @enderror
-          </div>
-
-          {{-- Активность --}}
-          <div class="form-row">
-            <div class="form-row-checkbox">
-              <input type="checkbox"
-                     id="IsActive"
-                     name="IsActive"
-                     value="1"
-                     {{ $activeChecked ? 'checked' : '' }}>
-              <label for="IsActive">Активно</label>
+            <div class="form-group">
+                <label for="Password">
+                    Пароль
+                    @if(isset($device))
+                        <span class="muted-text">(оставьте пустым, чтобы не менять)</span>
+                    @endif
+                </label>
+                <input type="password" id="Password" name="Password" maxlength="255">
             </div>
-            @error('IsActive')
-              <div class="form-error">{{ $message }}</div>
-            @enderror
-          </div>
-        </div>
 
-        <div class="form-actions">
-          <a href="{{ route('admin.devices.index') }}" class="btn-secondary-small">Отмена</a>
-          <button type="submit" class="btn-primary-small">
-            {{ $isEdit ? 'Сохранить изменения' : 'Создать устройство' }}
-          </button>
-        </div>
-      </form>
+            <div class="form-group">
+                <label for="Location">Расположение</label>
+                <input type="text" id="Location" name="Location"
+                       value="{{ old('Location', $device->location ?? '') }}" maxlength="255">
+            </div>
+
+            @php
+                $isActive = old('IsActive', $device->active ?? 1);
+            @endphp
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" name="IsActive" value="1" {{ $isActive ? 'checked' : '' }}>
+                    Активно
+                </label>
+            </div>
+
+            {{-- Только для камер --}}
+            @php
+                $deviceType = old('device_type', $type ?? 'controller');
+                $direction  = old('Direction', $device->direction ?? 'entry');
+            @endphp
+
+            <div id="camera-direction-block"
+                 class="form-group"
+                 style="{{ $deviceType === 'camera' ? '' : 'display:none' }}">
+                <label for="Direction">Направление (для камеры)</label>
+                <select id="Direction" name="Direction">
+                    <option value="entry" {{ $direction === 'entry' ? 'selected' : '' }}>Вход</option>
+                    <option value="exit"  {{ $direction === 'exit' ? 'selected' : '' }}>Выход</option>
+                    <option value="other" {{ $direction === 'other' ? 'selected' : '' }}>Другое</option>
+                </select>
+            </div>
+
+            <button type="submit">
+                {{ isset($device) ? 'Сохранить' : 'Создать' }}
+            </button>
+        </form>
     </div>
-  </div>
+</div>
+
 
   <script>
     (function () {

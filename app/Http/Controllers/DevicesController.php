@@ -4,27 +4,43 @@ namespace App\Http\Controllers;
 
 use App\Models\ControllerDevice;
 use App\Models\Camera;
-use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
-use Illuminate\Support\Facades\Crypt;
 use App\Models\PairDevice;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Validation\Rule;
 
 class DevicesController extends Controller
 {
-// страница формы (создание)
-public function create()
-{
-    return view('admin.devices.create', [
-        'device' => null,
-        'type'   => null,
-        'title'  => 'Добавить устройство',
-    ]);
-}
+    /**
+     * Список устройств и пар (админка).
+     */
+    public function index()
+    {
+        $controllers = ControllerDevice::orderBy('id')->get();
+        $cameras     = Camera::orderBy('id')->get();
+        $pairs       = PairDevice::with(['controller', 'entryCamera', 'exitCamera'])
+            ->orderBy('Id')
+            ->get();
 
+        return view('admin.devices.index', compact('controllers', 'cameras', 'pairs'));
+    }
 
+    /**
+     * Форма создания устройства (камера/контроллер).
+     */
+    public function create()
+    {
+        return view('admin.devices.create', [
+            'device' => null,
+            'type'   => null,
+            'title'  => 'Создать устройство',
+        ]);
+    }
 
-    // обработчик сохранения
-   public function store(Request $request)
+    /**
+     * Сохранение нового устройства.
+     */
+    public function store(Request $request)
     {
         $validated = $request->validate([
             'device_type' => ['required', Rule::in(['controller', 'camera'])],
@@ -36,8 +52,8 @@ public function create()
             'IsActive'    => ['nullable', 'boolean'],
             // только для камер:
             'Direction'   => [
-                Rule::requiredIf(fn() => $request->input('device_type') === 'camera'),
-                Rule::in(['entry','exit','other'])
+                Rule::requiredIf(fn () => $request->input('device_type') === 'camera'),
+                Rule::in(['entry', 'exit', 'other']),
             ],
         ]);
 
@@ -45,9 +61,10 @@ public function create()
             'ip_address'       => $validated['ip_address'],
             'Port'             => $validated['Port'],
             'Login'            => $validated['Login'],
-'Password'         => Crypt::encryptString($validated['Password']),
+            // ВАЖНО: пароли сразу шифруем.
+            'Password'         => Crypt::encryptString($validated['Password']),
             'Location'         => $validated['Location'] ?? null,
-            'IsActive'         => (int)($validated['IsActive'] ?? 1),
+            'IsActive'         => !empty($validated['IsActive']) ? 1 : 0,
             'Last_modified_at' => now(),
         ];
 
@@ -60,26 +77,11 @@ public function create()
 
         return redirect()
             ->route('admin.devices.index')
-            ->with('status', 'Устройство добавлено');
+            ->with('status', 'Устройство успешно создано.');
     }
 
-public function index()
-{
-    // контроллеры и камеры как раньше
-    $controllers = ControllerDevice::orderByDesc('last_modified_at')->get();
-    $cameras     = Camera::orderByDesc('last_modified_at')->get();
-
-    // пары устройств из таблицы pairdevices
-    $pairs = PairDevice::with(['controller', 'entryCamera', 'exitCamera'])
-        ->orderByDesc('Updated_at')
-        ->get();
-
-    return view('admin.devices.index', compact('controllers', 'cameras', 'pairs'));
-}
-
-
     /**
-     * Вспомогательный метод: получить модель по типу.
+     * Определение устройства по типу.
      */
     private function resolveDevice(string $type, int $id)
     {
@@ -97,18 +99,18 @@ public function index()
     /**
      * Форма редактирования устройства.
      */
-public function edit(string $type, int $id)
-{
-    $device = $this->resolveDevice($type, $id);
+    public function edit(string $type, int $id)
+    {
+        $device = $this->resolveDevice($type, $id);
 
-    return view('admin.devices.create', [
-        'device' => $device,
-        'type'   => $type,
-        'title'  => $type === 'controller'
-            ? 'Редактировать контроллер'
-            : 'Редактировать камеру',
-    ]);
-}
+        return view('admin.devices.create', [
+            'device' => $device,
+            'type'   => $type,
+            'title'  => $type === 'controller'
+                ? 'Редактировать контроллер'
+                : 'Редактировать камеру',
+        ]);
+    }
 
     /**
      * Сохранение изменений устройства.
@@ -127,27 +129,28 @@ public function edit(string $type, int $id)
         ];
 
         if ($type === 'camera') {
-            $rules['Direction'] = ['required', Rule::in(['entry', 'exit'])];
+            $rules['Direction'] = ['required', Rule::in(['entry', 'exit', 'other'])];
         }
 
         $data = $request->validate($rules);
 
-        $device->ip_address = $data['ip_address'];
-        $device->Port       = $data['Port'];
-        $device->Login      = $data['Login'];
-       
-        if (!empty($data['Password'])) {
-    $device->Password = Crypt::encryptString($data['Password']);
-}
+        $device->ip_address       = $data['ip_address'];
+        $device->Port             = $data['Port'];
+        $device->Login            = $data['Login'];
 
-        $device->Location   = $data['Location'] ?? null;
-        $device->IsActive   = !empty($data['IsActive']) ? 1 : 0;
+        // Пароль при редактировании НЕ обязателен
+        if (!empty($data['Password'])) {
+            $device->Password = Crypt::encryptString($data['Password']);
+        }
+
+        $device->Location         = $data['Location'] ?? null;
+        $device->IsActive         = !empty($data['IsActive']) ? 1 : 0;
+        $device->Last_modified_at = now();
 
         if ($type === 'camera') {
             $device->Direction = $data['Direction'];
         }
 
-        $device->Last_modified_at = now();
         $device->save();
 
         return redirect()
@@ -163,117 +166,272 @@ public function edit(string $type, int $id)
         $device = $this->resolveDevice($type, $id);
 
         $current = (int)($device->active ?? 0);
-        $device->IsActive = $current === 1 ? 0 : 1;
+        $device->IsActive = $current ? 0 : 1;
         $device->Last_modified_at = now();
         $device->save();
 
         return redirect()
             ->route('admin.devices.index')
-            ->with('status', 'Статус устройства изменён.');
+            ->with('status', 'Статус устройства обновлён.');
     }
 
-// --- Пара устройств: страница создания ---
-public function pairsCreate()
-{
-    // контроллеры и камеры берём из БД
-    $controllers = ControllerDevice::orderBy('id')->get();
-    $cameras     = Camera::orderBy('id')->get();
+    // =========================
+    // Пары устройств (pairdevices)
+    // =========================
 
-    // имя вьюхи подставь своё, если называл иначе
-    return view('admin.devices.pairs_create', [
-        'controllers' => $controllers,
-        'cameras'     => $cameras,
-    ]);
-}
+    /**
+     * Форма создания пары.
+     */
+    public function pairsCreate()
+    {
+        $controllers = ControllerDevice::where('IsActive', 1)->orderBy('id')->get();
+        $cameras     = Camera::where('IsActive', 1)->orderBy('id')->get();
 
+        return view('admin.devices.pairs_create', [
+            'pair'        => null,
+            'controllers' => $controllers,
+            'cameras'     => $cameras,
+        ]);
+    }
 
-// --- Пара устройств: сохранение ---
-public function pairsStore(Request $request)
-{
-    // Получаем реальные имена таблиц из моделей
-    $controllersTable = (new ControllerDevice())->getTable();
-    $camerasTable     = (new Camera())->getTable();
+    /**
+     * Сохранение новой пары устройств.
+     */
+    public function pairsStore(Request $request)
+    {
+        $controllersTable = (new ControllerDevice())->getTable();
+        $camerasTable     = (new Camera())->getTable();
 
-    $validated = $request->validate([
-        'Name'            => 'required|string|max:100',
-        'controller_id'   => "required|exists:{$controllersTable},id",
-        'entry_camera_id' => "nullable|exists:{$camerasTable},id",
-        'exit_camera_id'  => "nullable|exists:{$camerasTable},id|different:entry_camera_id",
-        'Comment'         => 'nullable|string|max:255',
-        'IsActive'        => 'required|boolean',
-    ]);
+        $validated = $request->validate([
+            'Name'            => 'required|string|max:100',
+            'controller_id'   => "required|integer|exists:{$controllersTable},id",
+            'entry_camera_id' => "required|integer|exists:{$camerasTable},id",
+            'exit_camera_id'  => "nullable|integer|different:entry_camera_id|exists:{$camerasTable},id",
+            'Comment'         => 'nullable|string|max:255',
+            'IsActive'        => 'nullable|boolean',
+        ]);
 
-    $pair = new PairDevice();
-    $pair->Name            = $validated['Name'];
-    $pair->Controller_id   = $validated['controller_id'];
-    $pair->Entry_camera_id = $validated['entry_camera_id'];
-    $pair->Exit_camera_id  = $validated['exit_camera_id'];
-    $pair->Comment         = $validated['Comment'] ?? null;
-    $pair->IsActive        = !empty($validated['IsActive']) ? 1 : 0;
+        $pair = new PairDevice();
+        $pair->Name            = $validated['Name'];
+        $pair->Controller_id   = $validated['controller_id'];
+        $pair->Entry_camera_id = $validated['entry_camera_id'];
+        $pair->Exit_camera_id  = $validated['exit_camera_id'] ?? null;
+        $pair->Comment         = $validated['Comment'] ?? null;
+        $pair->IsActive        = !empty($validated['IsActive']) ? 1 : 0;
+        $pair->Last_modified_at = now();
 
-    $pair->save();
+        $pair->save();
 
-    return redirect()
-        ->back()
-        ->with('status', 'Пара устройств успешно создана.');
-}
+        return redirect()
+            ->route('admin.devices.index')
+            ->with('status', 'Пара устройств успешно создана.');
+    }
 
+    /**
+     * Форма редактирования пары.
+     */
+    public function pairsEdit(int $id)
+    {
+        $pair = PairDevice::findOrFail($id);
 
-public function pairsEdit($id)
-{
-    $pair = PairDevice::findOrFail($id);
+        $controllers = ControllerDevice::where('IsActive', 1)->orderBy('id')->get();
+        $cameras     = Camera::where('IsActive', 1)->orderBy('id')->get();
 
-    $controllers = ControllerDevice::orderBy('id')->get();
-    $cameras     = Camera::orderBy('id')->get();
+        return view('admin.devices.pairs_create', [
+            'pair'        => $pair,
+            'controllers' => $controllers,
+            'cameras'     => $cameras,
+        ]);
+    }
 
-    return view('admin.devices.pairs_create', [
-        'pair'        => $pair,
-        'controllers' => $controllers,
-        'cameras'     => $cameras,
-    ]);
-}
+    /**
+     * Обновление пары устройств.
+     */
+    public function pairsUpdate(Request $request, int $id)
+    {
+        $pair = PairDevice::findOrFail($id);
 
-public function pairsUpdate(Request $request, $id)
-{
-    $pair = PairDevice::findOrFail($id);
+        $controllersTable = (new ControllerDevice())->getTable();
+        $camerasTable     = (new Camera())->getTable();
 
-    $controllersTable = (new ControllerDevice())->getTable();
-    $camerasTable     = (new Camera())->getTable();
+        $validated = $request->validate([
+            'Name'            => 'required|string|max:100',
+            'controller_id'   => "required|integer|exists:{$controllersTable},id",
+            'entry_camera_id' => "required|integer|exists:{$camerasTable},id",
+            'exit_camera_id'  => "nullable|integer|different:entry_camera_id|exists:{$camerasTable},id",
+            'Comment'         => 'nullable|string|max:255',
+            'IsActive'        => 'nullable|boolean',
+        ]);
 
-    $validated = $request->validate([
-        'Name'            => 'required|string|max:100',
-        'controller_id'   => "required|exists:{$controllersTable},id",
-        'entry_camera_id' => "nullable|exists:{$camerasTable},id",
-        'exit_camera_id'  => "nullable|exists:{$camerasTable},id|different:entry_camera_id",
-        'Comment'         => 'nullable|string|max:255',
-        'IsActive'        => 'nullable|boolean',
-    ]);
+        $pair->Name            = $validated['Name'];
+        $pair->Controller_id   = $validated['controller_id'];
+        $pair->Entry_camera_id = $validated['entry_camera_id'];
+        $pair->Exit_camera_id  = $validated['exit_camera_id'] ?? null;
+        $pair->Comment         = $validated['Comment'] ?? null;
+        $pair->IsActive        = !empty($validated['IsActive']) ? 1 : 0;
+        $pair->Last_modified_at = now();
 
-    $pair->Name            = $validated['Name'];
-    $pair->Controller_id   = $validated['controller_id'];
-    $pair->Entry_camera_id = $validated['entry_camera_id'];
-    $pair->Exit_camera_id  = $validated['exit_camera_id'];
-    $pair->Comment         = $validated['Comment'] ?? null;
-    $pair->IsActive        = !empty($validated['IsActive']) ? 1 : 0;
+        $pair->save();
 
-    $pair->save();
+        return redirect()
+            ->route('admin.devices.index')
+            ->with('status', 'Пара успешно обновлена.');
+    }
 
-    return redirect()
-        ->route('admin.devices.index')
-        ->with('status', 'Пара успешно обновлена.');
-}
+    /**
+     * Переключение активности пары.
+     */
+    public function pairsToggle(int $id)
+    {
+        $pair = PairDevice::findOrFail($id);
 
-public function pairsToggle($id)
-{
-    $pair = PairDevice::findOrFail($id);
+        $pair->IsActive = $pair->IsActive ? 0 : 1;
+        $pair->Last_modified_at = now();
+        $pair->save();
 
-    $pair->IsActive = $pair->IsActive ? 0 : 1;
-    $pair->save();
+        return redirect()
+            ->route('admin.devices.index')
+            ->with('status', 'Статус пары обновлён.');
+    }
 
-    return redirect()
-        ->route('admin.devices.index')
-        ->with('status', 'Статус пары обновлён.');
-}
+    // =========================
+    // INTERNAL API для SmartPass
+    // =========================
 
+    /**
+     * GET /api/device-pairs/active
+     *
+     * Возвращает список всех АКТИВНЫХ пар устройств с расшифрованными паролями
+     * контроллера и камер.
+     *
+     * Безопасность:
+     *  - endpoint защищён middleware 'smartpass.api', который проверяет X-Api-Token;
+     *  - используется только для доверенного C#-сервиса SmartPass;
+     *  - пароли расшифровываются ТОЛЬКО здесь и не логируются.
+     */
+    public function apiActivePairs()
+    {
+        $pairs = PairDevice::with(['controller', 'entryCamera', 'exitCamera'])
+            ->where('IsActive', 1)
+            ->get();
 
+        $result = [];
+
+        foreach ($pairs as $pair) {
+            // Пара без контроллера – пропускаем (неконсистентные данные)
+            if (!$pair->controller) {
+                continue;
+            }
+
+            $controller = $pair->controller;
+            $entry      = $pair->entryCamera;
+            $exit       = $pair->exitCamera;
+
+            $result[] = [
+                'pair_id'      => (int)$pair->id,
+                'pair_name'    => $pair->name,
+                'comment'      => $pair->Comment ?? null,
+                'is_active'    => (bool)$pair->active,
+                'controller'   => $this->serializeDeviceForApi($controller),
+                'entry_camera' => $entry ? $this->serializeDeviceForApi($entry) : null,
+                'exit_camera'  => $exit ? $this->serializeDeviceForApi($exit) : null,
+            ];
+        }
+
+        return response()->json($result);
+    }
+
+    /**
+     * Преобразование камеры/контроллера в JSON-структуру для API,
+     * с расшифровкой пароля.
+     *
+     * Здесь сознательно:
+     *  - не логируем пароль и зашифрованную строку;
+     *  - используем getOriginal('Password'), чтобы явно взять значение из БД;
+     *  - в случае ошибки расшифровки возвращаем пароль = null, чтобы C#-клиент
+     *    мог отреагировать (например, залогировать на своей стороне).
+     */
+    private function serializeDeviceForApi($device): array
+    {
+        // Нормализованные геттеры (ip, port, login, location, active, id)
+        $id        = (int)$device->id;
+        $ip        = $device->ip;
+        $port      = $device->port !== null ? (int)$device->port : null;
+        $login     = $device->login;
+        $location  = $device->location;
+        $isActive  = (bool)$device->active;
+
+        // Берём зашифрованное значение напрямую из атрибутов
+        $encrypted = $device->getOriginal('Password') ?? $device->getOriginal('password');
+
+        $password = null;
+        if (!empty($encrypted)) {
+            try {
+                $password = Crypt::decryptString($encrypted);
+            } catch (\Throwable $e) {
+                // Никаких логов с паролем или ciphertext здесь,
+                // максимум – общий лог без данных, если понадобится.
+                $password = null;
+            }
+        }
+
+        return [
+            'id'        => $id,
+            // "name" – у тебя отдельного поля нет, поэтому
+            // логично отдать Location как некое человекочитаемое имя.
+            'name'      => $location,
+            'ip'        => $ip,
+            'port'      => $port,
+            'login'     => $login,
+            'password'  => $password,
+            'location'  => $location,
+            'is_active' => $isActive,
+        ];
+    }
+
+    /**
+     * Получение активных пар устройств.
+     */
+    public function getActiveDevicePairs(Request $request)
+    {
+        // Проверка API токена (без анонимного доступа)
+        $this->authorize('access-api', Role::class);
+
+        // Получаем активные пары устройств с контроллером и камерами
+        $pairs = PairDevice::with(['controller', 'entryCamera', 'exitCamera'])
+            ->where('IsActive', 1)
+            ->get();
+
+        // Подготовка данных для ответа
+        $response = $pairs->map(function ($pair) {
+            return [
+                'pair_id' => $pair->Id,
+                'pair_name' => $pair->Name,
+                'controller' => [
+                    'id' => $pair->controller->Id,
+                    'ip' => $pair->controller->Ip,
+                    'port' => $pair->controller->Port,
+                    'login' => $pair->controller->Login,
+                    'password' => Crypt::decryptString($pair->controller->Password),  // Расшифровка пароля контроллера
+                ],
+                'entry_camera' => $pair->entryCamera ? [
+                    'id' => $pair->entryCamera->Id,
+                    'ip' => $pair->entryCamera->Ip,
+                    'port' => $pair->entryCamera->Port,
+                    'login' => $pair->entryCamera->Login,
+                    'password' => Crypt::decryptString($pair->entryCamera->Password),  // Расшифровка пароля камеры входа
+                ] : null,
+                'exit_camera' => $pair->exitCamera ? [
+                    'id' => $pair->exitCamera->Id,
+                    'ip' => $pair->exitCamera->Ip,
+                    'port' => $pair->exitCamera->Port,
+                    'login' => $pair->exitCamera->Login,
+                    'password' => Crypt::decryptString($pair->exitCamera->Password),  // Расшифровка пароля камеры выхода
+                ] : null,
+                'is_active' => $pair->IsActive,
+            ];
+        });
+
+        return response()->json($response);
+    }
 }

@@ -6,18 +6,12 @@ use Illuminate\Database\Eloquent\Model;
 
 class PairDevice extends Model
 {
-    // Явное имя таблицы
     protected $table = 'pairdevices';
-
-    // Первичный ключ
     protected $primaryKey = 'Id';
 
-     public $incrementing = true;
+    public $incrementing = true;
     protected $keyType = 'int';
-
-    // Нет created_at, только Updated_at
-    const CREATED_AT = null;
-    const UPDATED_AT = 'Updated_at';
+    public $timestamps = false; // если у тебя нет created_at/updated_at
 
     protected $fillable = [
         'Name',
@@ -26,27 +20,52 @@ class PairDevice extends Model
         'Exit_camera_id',
         'Comment',
         'IsActive',
+        'Last_modified_at',
     ];
 
-    protected $casts = [
-        'IsActive' => 'boolean',
-    ];
+    private function pick(array $keys)
+    {
+        foreach ($keys as $k) {
+            if (array_key_exists($k, $this->attributes)
+                && $this->attributes[$k] !== null
+                && $this->attributes[$k] !== '') {
+                return $this->attributes[$k];
+            }
+        }
+        return null;
+    }
 
-    // --- Связи ---
+    public function getIdAttribute()
+    {
+        return $this->pick(['id', 'ID', 'Id']);
+    }
 
-    // Контроллер
+    public function getNameAttribute()
+    {
+        return $this->pick(['Name', 'name']);
+    }
+
+    public function getActiveAttribute()
+    {
+        return $this->pick(['IsActive', 'active']);
+    }
+
+    public function getLastModifiedAtAttribute()
+    {
+        return $this->pick(['Last_modified_at', 'last_modified_at']);
+    }
+
+    // Связи
     public function controller()
     {
         return $this->belongsTo(ControllerDevice::class, 'Controller_id');
     }
 
-    // Камера входа
     public function entryCamera()
     {
         return $this->belongsTo(Camera::class, 'Entry_camera_id');
     }
 
-    // Камера выхода
     public function exitCamera()
     {
         return $this->belongsTo(Camera::class, 'Exit_camera_id');

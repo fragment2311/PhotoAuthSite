@@ -5,6 +5,7 @@ namespace App\Providers;
 use Illuminate\Foundation\Support\Providers\RouteServiceProvider as ServiceProvider;
 use Illuminate\Support\Facades\Route;
 use App\Http\Middleware\RoleMiddleware; // не забудьте импорт
+use App\Http\Middleware\ApiTokenAuth;
 
 class RouteServiceProvider extends ServiceProvider
 {
@@ -16,20 +17,23 @@ class RouteServiceProvider extends ServiceProvider
     /**
      * Определите маршруты для приложения.
      */
-    public function boot(): void
-    {
-        // Регистрируем alias 'role' для вашего middleware
-        Route::aliasMiddleware('role', RoleMiddleware::class);
+public function boot(): void
+{
+    // уже есть:
+    Route::aliasMiddleware('role', RoleMiddleware::class);
 
-        $this->routes(function () {
-            // Web-маршруты
-            Route::middleware('web')
-                 ->group(base_path('routes/web.php'));
+    // ДОБАВЬ ВОТ ЭТО:
+    Route::aliasMiddleware('api.token', ApiTokenAuth::class);
 
-            // API-маршруты, если нужны
-            // Route::prefix('api')
-            //      ->middleware('api')
-            //      ->group(base_path('routes/api.php'));
-        });
-    }
+    $this->routes(function () {
+        Route::middleware('web')
+             ->group(base_path('routes/web.php'));
+
+        Route::prefix('api')
+             ->middleware('api')
+             ->group(base_path('routes/api.php'));
+    });
+}
+
+    
 }

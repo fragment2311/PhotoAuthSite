@@ -194,6 +194,8 @@
     #back-to-top.show { display: flex; opacity: 1; }
     #back-to-top:hover { background: var(--link-hover); }
   </style>
+  <link rel="stylesheet" href="{{ asset('css/header-buttons.css') }}">
+
 </head>
 <body>
   @php
@@ -201,29 +203,8 @@
     use Illuminate\Support\Str;
   @endphp
 
-  <header>
-    <h1>
-        <a href="{{ route('gallery',['dir'=>'entrance_photos']) }}"
-           style="text-decoration:none;color:inherit;">
-            Галерея
-            @if($personName)
-                <span style="font-size: 0.8em; margin-left: 15px;">{{ $personName }}</span>
-            @endif
-        </a>
-    </h1>
-    <div>
-        @if(Auth::check() && Auth::user()->role->NameRole==='Администратор')
-            <a href="{{ route('admin.users') }}" class="btn btn-primary">Список пользователей</a>
-            <a href="{{ route('admin.register') }}" class="btn btn-primary">Новый пользователь</a>
-            <a href="{{ route('admin.devices.index') }}" class="btn btn-primary">Устройства</a>
-        @endif
-        <a href="{{ route('gallery',['dir'=>'entrance_photos']) }}" class="btn btn-primary">В галерею</a>
-        <form method="POST" action="{{ route('logout') }}" style="display:inline">
-            @csrf
-            <button type="submit" class="btn btn-danger">Выйти</button>
-        </form>
-    </div>
-  </header>
+@include('layouts.header', ['headerTitle' => 'Галерея'])
+
 
   <div class="container">
     <div class="nav-row">

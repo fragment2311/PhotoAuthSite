@@ -63,7 +63,7 @@ class Kernel extends HttpKernel
 
         // вот наш middleware для ролей
 'role' => \App\Http\Middleware\RoleMiddleware::class,
-
-
+'device.api' => \App\Http\Middleware\CheckDeviceApiToken::class,
+'api.token' => \App\Http\Middleware\ApiTokenAuth::class,
     ];
 }

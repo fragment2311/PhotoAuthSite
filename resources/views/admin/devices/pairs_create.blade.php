@@ -7,19 +7,89 @@
 
   <style>
     :root {
-      --bg: #f6f7fb;
-      --card: #ffffff;
-      --text: #1f2937;
-      --muted: #6b7280;
-      --link: #2563eb;
-      --link-hover: #1d4ed8;
-      --border: #e5e7eb;
-      --ok: #16a34a;
-      --no: #dc2626;
-      --primary-bg: #2563eb;
-      --secondary-bg: #4b5563;
-      --danger-bg: #dc2626;
-    }
+    --bg: #f6f7fb;
+    --card: #ffffff;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --link: #2563eb;
+    --link-hover: #1d4ed8;
+    --border: #e5e7eb;
+    --ok: #16a34a;
+    --no: #dc2626;
+    --primary-bg: #2563eb;
+    --secondary-bg: #4b5563;
+    --danger-bg: #dc2626;
+}
+
+/* Общие стили для формы */
+.form-container {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 20px;
+    background-color: var(--card);
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Заголовок формы */
+h2 {
+    text-align: center;
+    color: var(--text);
+    font-size: 24px;
+    margin-bottom: 20px;
+}
+
+/* Стили для полей ввода и выпадающих списков */
+input[type="text"], select, textarea {
+    width: 100%;
+    padding: 12px;
+    margin-bottom: 15px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    font-size: 16px;
+    transition: all 0.3s ease-in-out;
+}
+
+input[type="text"]:focus, select:focus, textarea:focus {
+    border-color: var(--primary-bg);
+    outline: none;
+}
+
+/* Стилизация чекбокса */
+input[type="checkbox"] {
+    margin-right: 10px;
+}
+
+/* Кнопка */
+button {
+    width: 100%;
+    padding: 12px;
+    background-color: var(--primary-bg);
+    color: white;
+    border: none;
+    border-radius: 5px;
+    font-size: 18px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+/* Наведение на кнопку */
+button:hover {
+    background-color: var(--link-hover);
+}
+
+/* Стилизация контейнера для элементов формы */
+.form-group {
+    margin-bottom: 20px;
+}
+
+/* Отступы и выравнивание для меток */
+label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: bold;
+    color: var(--text);
+}
 
     * { box-sizing: border-box; }
 
@@ -230,168 +300,93 @@
 
   <div class="wrap">
     @if(session('status'))
-      <div class="alert alert-ok">
-        {{ session('status') }}
-      </div>
+        <div class="alert alert-ok">
+            {{ session('status') }}
+        </div>
     @endif
 
     @if($errors->any())
-      <div class="alert alert-error">
-        <ul style="margin:0; padding-left:18px;">
-          @foreach($errors->all() as $error)
-            <li>{{ $error }}</li>
-          @endforeach
-        </ul>
-      </div>
+        <div class="alert alert-error">
+            <ul>
+                @foreach($errors->all() as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
+            </ul>
+        </div>
     @endif
 
     <div class="card">
-      <h2>{{ $pageTitle }}</h2>
+        <h2>{{ $pageTitle }}</h2>
 
-      <form method="POST"
-            action="{{ $isEdit
-                        ? route('admin.device_pairs.update', ['id' => $pair->Id])
-                        : route('admin.device_pairs.store') }}">
-        @csrf
-        @if($isEdit)
-          @method('PATCH')
-        @endif
+        <form method="POST" action="{{ isset($pair) ? route('admin.device_pairs.update', $pair->id) : route('admin.device_pairs.store') }}">
+            @csrf
+            @if(isset($pair))
+                @method('PUT')
+            @endif
 
-        <div class="form-grid">
-
-          {{-- Название пары --}}
-          <div class="form-row">
-            <label for="Name">Название пары</label>
-            <input type="text"
-                   id="Name"
-                   name="Name"
-                   value="{{ $currentName }}"
-                   required>
-            @error('Name')
-              <div class="form-error">{{ $message }}</div>
-            @enderror
-          </div>
-
-          {{-- Контроллер + камера (вход) --}}
-          <div class="form-row-inline">
-            <div class="form-row">
-              <label for="controller_id">Контроллер</label>
-              <select id="controller_id" name="controller_id" required>
-                <option value="">Выберите контроллер</option>
-                @foreach($controllers as $controller)
-                  <option value="{{ $controller->id }}"
-                          {{ (string)$currentControllerId === (string)$controller->id ? 'selected' : '' }}>
-                    {{ $controller->ip ?? $controller->ip_address ?? 'без IP' }}
-                    @if(!empty($controller->location))
-                      — {{ $controller->location }}
-                    @endif
-                  </option>
-                @endforeach
-              </select>
-              @error('controller_id')
-                <div class="form-error">{{ $message }}</div>
-              @enderror
+            <div class="form-group">
+                <label for="Name">Название пары</label>
+                <input type="text" id="Name" name="Name" value="{{ old('Name', $pair->name ?? '') }}" required maxlength="100">
             </div>
 
-            <div class="form-row">
-              <label for="entry_camera_id">Камера (вход)</label>
-              <select id="entry_camera_id" name="entry_camera_id" required>
-                <option value="">Выберите камеру входа</option>
-                @foreach($cameras as $camera)
-                  @php
-                      $directionLabel = 'Другое';
-                      if ($camera->direction === 'entry') {
-                          $directionLabel = 'Вход';
-                      } elseif ($camera->direction === 'exit') {
-                          $directionLabel = 'Выход';
-                      }
-                  @endphp
-                  <option value="{{ $camera->id }}"
-                          {{ (string)$currentEntryCameraId === (string)$camera->id ? 'selected' : '' }}>
-                    {{ $camera->ip ?? $camera->ip_address ?? 'без IP' }}
-                    @if(!empty($camera->location))
-                      — {{ $camera->location }}
-                    @endif
-                    @if(!empty($camera->direction))
-                      ({{ $directionLabel }})
-                    @endif
-                  </option>
-                @endforeach
-              </select>
-              @error('entry_camera_id')
-                <div class="form-error">{{ $message }}</div>
-              @enderror
+            <div class="form-group">
+                <label for="controller_id">Контроллер</label>
+                <select id="controller_id" name="controller_id" required>
+                    <option value="">-- выберите контроллер --</option>
+                    @foreach($controllers as $controller)
+                        <option value="{{ $controller->id }}"
+                            {{ (int) old('controller_id', $pair->Controller_id ?? 0) === $controller->id ? 'selected' : '' }}>
+                            [#{{ $controller->id }}] {{ $controller->location ?? $controller->ip }}
+                        </option>
+                    @endforeach
+                </select>
             </div>
-          </div>
 
-          {{-- Камера (выход) --}}
-          <div class="form-row">
-            <label for="exit_camera_id">Камера (выход)</label>
-            <select id="exit_camera_id" name="exit_camera_id" required>
-              <option value="">Выберите камеру выхода</option>
-              @foreach($cameras as $camera)
-                @php
-                    $directionLabel = 'Другое';
-                    if ($camera->direction === 'entry') {
-                        $directionLabel = 'Вход';
-                    } elseif ($camera->direction === 'exit') {
-                        $directionLabel = 'Выход';
-                    }
-                @endphp
-                <option value="{{ $camera->id }}"
-                        {{ (string)$currentExitCameraId === (string)$camera->id ? 'selected' : '' }}>
-                  {{ $camera->ip ?? $camera->ip_address ?? 'без IP' }}
-                  @if(!empty($camera->location))
-                    — {{ $camera->location }}
-                  @endif
-                  @if(!empty($camera->direction))
-                    ({{ $directionLabel }})
-                  @endif
-                </option>
-              @endforeach
-            </select>
-            @error('exit_camera_id')
-              <div class="form-error">{{ $message }}</div>
-            @enderror
-          </div>
-
-          {{-- Комментарий --}}
-          <div class="form-row">
-            <label for="Comment">Комментарий (например: турникет 1, вход)</label>
-            <input type="text"
-                   id="Comment"
-                   name="Comment"
-                   value="{{ $currentComment }}">
-            @error('Comment')
-              <div class="form-error">{{ $message }}</div>
-            @enderror
-          </div>
-
-          {{-- Активность --}}
-          <div class="form-row">
-            <div class="form-row-checkbox">
-              <input type="checkbox"
-                     id="IsActive"
-                     name="IsActive"
-                     value="1"
-                     {{ $activeChecked ? 'checked' : '' }}>
-              <label for="IsActive">Пара активна</label>
+            <div class="form-group">
+                <label for="entry_camera_id">Входная камера</label>
+                <select id="entry_camera_id" name="entry_camera_id" required>
+                    <option value="">-- выберите камеру --</option>
+                    @foreach($cameras as $camera)
+                        <option value="{{ $camera->id }}"
+                            {{ (int) old('entry_camera_id', $pair->Entry_camera_id ?? 0) === $camera->id ? 'selected' : '' }}>
+                            [#{{ $camera->id }}] {{ $camera->location ?? $camera->ip }} ({{ $camera->direction_ru }})
+                        </option>
+                    @endforeach
+                </select>
             </div>
-            @error('IsActive')
-              <div class="form-error">{{ $message }}</div>
-            @enderror
-          </div>
 
-        </div>
+            <div class="form-group">
+                <label for="exit_camera_id">Выходная камера (опционально)</label>
+                <select id="exit_camera_id" name="exit_camera_id">
+                    <option value="">-- не выбрана --</option>
+                    @foreach($cameras as $camera)
+                        <option value="{{ $camera->id }}"
+                            {{ (int) old('exit_camera_id', $pair->Exit_camera_id ?? 0) === $camera->id ? 'selected' : '' }}>
+                            [#{{ $camera->id }}] {{ $camera->location ?? $camera->ip }} ({{ $camera->direction_ru }})
+                        </option>
+                    @endforeach
+                </select>
+            </div>
 
-        <div class="form-actions">
-          <a href="{{ route('admin.devices.index') }}" class="btn-secondary-small">Отмена</a>
-          <button type="submit" class="btn-primary-small">
-            {{ $isEdit ? 'Сохранить изменения' : 'Создать пару' }}
-          </button>
-        </div>
-      </form>
+            <div class="form-group">
+                <label for="Comment">Комментарий</label>
+                <input type="text" id="Comment" name="Comment" value="{{ old('Comment', $pair->Comment ?? '') }}" maxlength="255">
+            </div>
+
+            @php
+                $isActive = old('IsActive', $pair->IsActive ?? 1);
+            @endphp
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" name="IsActive" value="1" {{ $isActive ? 'checked' : '' }}>
+                    Пара активна
+                </label>
+            </div>
+
+            <button type="submit">{{ isset($pair) ? 'Сохранить' : 'Создать' }}</button>
+        </form>
     </div>
-  </div>
+</div>
+
 </body>
 </html>

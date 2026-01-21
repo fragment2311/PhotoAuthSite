@@ -1,0 +1,91 @@
+/* Только для шапки, не для остальных кнопок страницы */
+header .btn-group{
+  display:flex;
+  gap: 12px;
+  align-items:center;
+  flex-wrap: wrap;
+}
+    header {
+      position: fixed;
+      height: 80px;
+      top: 0; left: 0; right: 0;
+      background: var(--card);
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      z-index: 1000;
+      
+    }
+
+   body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      font-size: 16px;
+    }
+
+        .btn {
+      padding: 0.6rem 1.2rem;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      text-decoration: none;
+      color: #fff;
+      font-size: 1rem;
+      margin-left: .5rem;
+      transition: background .2s;
+      display: inline-block;
+    }
+    
+header .btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding: 11px 18px;
+  height: 40px;
+  font-size: 16px;
+  line-height: 1;
+  border-radius: 6px;
+  text-decoration:none;
+  cursor:pointer;
+  white-space: nowrap;
+
+  /* КЛЮЧ: не даём кнопке быть прозрачной */
+  color: #fff !important;
+  background: #2564eb;                /* базовый фон по умолчанию */
+  border: 2px solid transparent;
+}
+
+/* Primary */
+header .btn.btn-primary{
+  background: var(--link, #007bff) !important;
+  border-color: var(--link, #007bff) !important;
+}
+header .btn.btn-primary:hover{
+  background: var(--link-hover, #1d4ed8) !important;
+  border-color: var(--link-hover, #1d4ed8) !important;
+}
+
+/* Secondary */
+header .btn.btn-secondary{
+  background: var(--secondary, #6c757d) !important;
+  border-color: var(--secondary, #6c757d) !important;
+}
+header .btn.btn-secondary:hover{
+  background: var(--secondary-hover, #5a6268) !important;
+  border-color: var(--secondary-hover, #5a6268) !important;
+}
+
+/* Danger */
+header .btn.btn-danger{
+  background: var(--danger, #dc3545) !important;
+  border-color: var(--danger, #dc3545) !important;
+}
+header .btn.btn-danger:hover{
+  background: var(--danger-hover, #c82333) !important;
+  border-color: var(--danger-hover, #c82333) !important;
+}

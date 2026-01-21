@@ -11,8 +11,6 @@
       --card: #ffffff;
       --text: #1f2937;
       --muted: #6b7280;
-      --link: #2563eb;
-      --link-hover: #1d4ed8;
       --border: #e5e7eb;
       --ok: #16a34a;
       --no: #dc2626;
@@ -66,42 +64,9 @@
       margin-bottom: 24px;
     }
 
-    /* КНОПКИ В ШАПКЕ */
-    header {
-      position: fixed;
-      height: 80px;
-      top: 0; left: 0; right: 0;
-      background: var(--card);
-      padding: 1rem 2rem;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-      z-index: 1000;
-    }
 
-    header h1 { font-size: 2rem; margin: 0; }
 
-    header .btn-group { display: flex; gap: 1rem; }
 
-    header .btn {
-      display: inline-block;
-      padding: 0.7rem 1.4rem;
-      font-size: 1.1rem;
-      border-radius: 6px;
-      text-decoration: none;
-      color: white;
-      border: 2px solid transparent;
-      cursor: pointer;
-      transition: .2s;
-    }
-
-    .btn-primary { background: var(--primary-bg); border-color: var(--primary-bg); }
-    .btn-primary:hover { background: var(--link-hover); border-color: var(--link-hover); }
-    .btn-secondary { background: var(--secondary-bg); border-color: var(--secondary-bg); }
-    .btn-secondary:hover { background: var(--muted); border-color: var(--muted); }
-    .btn-danger { background: var(--danger-bg); border-color: var(--danger-bg); }
-    .btn-danger:hover { background: #b91c2a; border-color: #b91c2a; }
 
     /* КНОПКИ ДЕЙСТВИЙ НА СТРАНИЦЕ */
     .page-actions {
@@ -218,26 +183,12 @@
       flex-wrap: wrap;
     }
   </style>
+  <link rel="stylesheet" href="{{ asset('css/header-buttons.css') }}">
+
 </head>
 <body>
-  <header>
-    <h1>
-      <a href="{{ route('gallery',['dir'=>'entrance_photos']) }}"
-         style="text-decoration:none;color:inherit;">
-        Галерея-Устройства
-      </a>
-    </h1>
-    <div class="btn-group">
-      <a href="{{ route('gallery', ['dir' => 'entrance_photos']) }}" class="btn btn-primary">В галерею</a>
-      <a href="{{ route('admin.devices.index') }}" class="btn btn-primary">Устройства</a>
-      <a href="{{ route('admin.users') }}" class="btn btn-primary">Список пользователей</a>
-      <a href="{{ route('admin.register') }}" class="btn btn-primary">Новый пользователь</a>
-      <form method="POST" action="{{ route('logout') }}" style="display:inline">
-        @csrf
-        <button type="submit" class="btn btn-danger">Выйти</button>
-      </form>
-    </div>
-  </header>
+@include('layouts.header', ['headerTitle' => 'Галерея-Проходы'])
+
 
   <div class="wrap">
     <div class="page-actions">

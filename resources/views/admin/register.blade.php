@@ -22,61 +22,20 @@
       --danger-hover: #c82333;
     }
     * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      min-height: 100vh;
-      font-size: 22px;
-    }
-    header {
-      background: var(--card);
-      padding: 1rem 2rem;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
+ 
+
     header h1 {
       font-size: 2rem; margin: 0;
     }
-    .btn {
-      padding: 0.6rem 1.2rem;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      text-decoration: none;
-      color: #fff;
-      font-size: 1rem;
-      margin-left: .5rem;
-      transition: background .2s;
-      display: inline-block;
-    }
-    .btn-primary {
-      background: var(--primary);
-    }
-    .btn-primary:hover {
-      background: var(--primary-hover);
-    }
-    .btn-secondary {
-      background: var(--secondary);
-    }
-    .btn-secondary:hover {
-      background: var(--secondary-hover);
-    }
+
+    
     .btn-success {
       background: var(--success);
     }
     .btn-success:hover {
       background: var(--success-hover);
     }
-    .btn-danger {
-      background: var(--danger);
-    }
-    .btn-danger:hover {
-      background: var(--danger-hover);
-    }
+
 
     .container {
       width: 100%;
@@ -119,29 +78,16 @@
       font-size: 1rem;
     }
   </style>
+  <link rel="stylesheet"
+      href="{{ asset('css/header-buttons.css') }}?v={{ filemtime(public_path('css/header-buttons.css')) }}">
+
 </head>
 <body>
 
 @php use Illuminate\Support\Facades\Auth; @endphp
 
-<header>
-    <h1>
-        <a href="{{ route('gallery',['dir'=>'entrance_photos']) }}"
-           style="text-decoration:none;color:inherit;">
-            Галерея</a>
-    </h1>
-    <div>
-        @if(Auth::check() && Auth::user()->role->NameRole==='Администратор')
-            <a href="{{ route('admin.users') }}" class="btn btn-primary">Список пользователей</a>
-            <a href="{{ route('admin.register') }}" class="btn btn-primary">Новый пользователь</a>
-        @endif
-        <a href="{{ route('gallery',['dir'=>'entrance_photos']) }}" class="btn btn-primary">В галерею</a>
-        <form method="POST" action="{{ route('logout') }}" style="display:inline">
-            @csrf
-            <button type="submit" class="btn btn-danger">Выйти</button>
-        </form>
-    </div>
-</header>
+@include('layouts.header', ['headerTitle' => 'Галерея-Проходы'])
+
 
 <div class="container">
   <a href="{{ route('admin.users') }}" class="btn btn-primary nav-back">← Назад к списку</a>

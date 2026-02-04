@@ -6,6 +6,8 @@ use App\Http\Controllers\FtpAuthController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\DevicesController;
 use App\Http\Controllers\Api\DevicePairApiController;
+use App\Http\Controllers\PassageController;
+use Illuminate\Support\Facades\Log;
 /*
 |--------------------------------------------------------------------------
 | Web Routes
@@ -35,6 +37,19 @@ Route::middleware('auth')->group(function () {
     Route::get('/gallery/{dir?}', [FtpAuthController::class, 'gallery'])
         ->where('dir', '.*')
         ->name('gallery');
+
+        Route::get('/all-passages', [FtpAuthController::class, 'allPassages'])
+    ->name('all.passages');
+
+
+
+    Route::get('/passage', [PassageController::class, 'index'])->name('passage.index');
+    Route::get('/work-hours', [\App\Http\Controllers\WorkHoursController::class, 'index'])
+    ->name('workhours.index');
+    Route::get('/admin/passages/export', [\App\Http\Controllers\PassageController::class, 'export'])
+    ->name('admin.passages.export');
+
+
 
     // Админ (просмотр/редактирование) — любой залогиненный
     Route::get('/admin/users', [AdminController::class, 'users'])->name('admin.users');
@@ -88,6 +103,9 @@ Route::middleware('auth')->group(function () {
                 ->whereNumber('id')
                 ->name('devices.toggle');
 
+                Route::patch('/pairs/{id}/toggle', [DevicesController::class, 'pairsToggle'])
+                    ->name('pairs.toggle');
+
             // =========================
             // ПАРЫ УСТРОЙСТВ
             // =========================
@@ -115,6 +133,7 @@ Route::middleware('auth')->group(function () {
                 ->whereNumber('id')
                 ->name('device_pairs.toggle');
         });
+
    
 Route::middleware(['api', 'api.token'])->get('device-pairs/active', [DevicePairApiController::class, 'active']);
 

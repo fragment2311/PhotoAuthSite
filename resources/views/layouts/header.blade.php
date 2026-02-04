@@ -11,6 +11,7 @@
     <a href="{{ route('admin.devices.index') }}" class="btn btn-primary">Устройства</a>
     <a href="{{ route('admin.users') }}" class="btn btn-primary">Список пользователей</a>
     <a href="{{ route('admin.register') }}" class="btn btn-primary">Новый пользователь</a>
+    <a href="{{ route('passage.index') }}" class="btn btn-primary">Проходы</a>
 
     <form method="POST" action="{{ route('logout') }}" style="display:inline">
       @csrf

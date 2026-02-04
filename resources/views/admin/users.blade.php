@@ -39,32 +39,7 @@
 
 
 
-    /* --- КНОПКИ ДЕЙСТВИЙ НА СТРАНИЦЕ --- */
-    .page-actions {
-      display: flex;
-      justify-content: flex-end;
-      margin-bottom: 20px;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
 
-    .action-btn {
-      background: var(--primary-bg);
-      color: white;
-      padding: 10px 18px;
-      border-radius: 8px;
-      text-decoration: none;
-      font-size: 15px;
-      border: none;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .action-btn:hover { background: var(--link-hover); }
-
-    .action-btn.danger { background: var(--danger-bg); }
-    .action-btn.danger:hover { background: #b91c2a; }
 
     /* Кнопка-иконка маленькая */
     .icon-btn {
@@ -86,48 +61,14 @@
       background: var(--muted);
     }
 
-    /* === Карточка + таблица === */
-    .card {
-      background: var(--card);
-      border-radius: 12px;
-      border: 1px solid var(--border);
-      padding: 16px;
-      margin-bottom: 24px;
-      box-shadow: 0 2px 6px rgba(0,0,0,.04);
-    }
+
 
     .card h2 {
       font-size: 20px;
       margin: 0 0 12px;
     }
 
-    .table-wrap {
-      width: 100%;
-      overflow: auto;
-      border-radius: 10px;
-      border: 1px solid var(--border);
-    }
 
-    table { width: 100%; border-collapse: collapse; }
-    th, td { padding: 10px 12px; white-space: nowrap; }
-
-    thead th {
-      background: #f9fafb;
-      font-weight: 600;
-      font-size: 13px;
-      color: var(--muted);
-      border-bottom: 1px solid var(--border);
-    }
-
-    tbody tr:hover td { background: #f9fafb; }
-
-    .badge {
-      padding: 3px 8px;
-      border-radius: 999px;
-      font-size: 12px;
-      display: inline-block;
-      border: 1px solid var(--border);
-    }
 
     .yes { background: #f0fdf4; border-color: #bbf7d0; color: var(--ok); }
     .no  { background: #fef2f2; border-color: #fecaca; color: var(--no); }
@@ -150,6 +91,8 @@
 
 
   </style>
+    <link rel="stylesheet" href="{{ asset('css/spreadsheet.css') }}">
+
 <link rel="stylesheet"
       href="{{ asset('css/header-buttons.css') }}?v={{ filemtime(public_path('css/header-buttons.css')) }}">
 </head>
@@ -161,12 +104,13 @@
 
   <div class="wrap">
 
-    <div class="page-actions">
-      <a href="{{ route('admin.register') }}" class="action-btn">Добавить пользователя</a>
-    </div>
+  <div class="page-actions">
+    <a href="{{ route('admin.register') }}" class="action-btn">Добавить пользователя</a>
+  </div>
 
-    <div class="card">
-      <h2>Список пользователей</h2>
+  <div class="spreadsheet">
+    <div class="sheet">
+      <h2 class="sheet-title">Список пользователей</h2>
 
       @if($users->isEmpty())
         <div class="empty">Пользователей нет.</div>
@@ -174,60 +118,68 @@
         <div class="table-wrap">
           <table>
             <thead>
-            <tr>
-              <th>ID</th>
-              <th>Логин</th>
-              <th>Роль</th>
-              <th>Активность</th>
-              <th>Последнее обновление</th>
-              <th>Действия</th>
-            </tr>
-            </thead>
-            <tbody>
-            @foreach($users as $user)
               <tr>
-                <td>{{ $user->Id }}</td>
-                <td>{{ $user->Login }}</td>
-                <td>{{ $user->role->NameRole ?? '—' }}</td>
-                <td>
-                  @if($user->IsActive)
-                    <span class="badge yes">Активен</span>
-                  @else
-                    <span class="badge no">Заблокирован</span>
-                  @endif
-                </td>
-                <td>{{ \Carbon\Carbon::parse($user->LastUpdate)->format('d.m.Y H:i') }}</td>
-
-                <td class="actions-cell">
-
-                  {{-- 🖉 Кнопка редактирования — только иконка --}}
-                  <a href="{{ route('admin.users.edit', $user->Id) }}"
-                     class="icon-btn"
-                     title="Редактировать">✎</a>
-
-                  {{-- Блокировка / активация --}}
-                  <form method="POST"
-                        action="{{ route('admin.users.toggle', $user->Id) }}"
-                        onsubmit="return confirm('Вы уверены?');">
-                    @csrf
-                    @method('PATCH')
-
-                    @if($user->IsActive)
-                      <button class="action-btn danger" type="submit">Заблокировать</button>
-                    @else
-                      <button class="action-btn" type="submit">Активировать</button>
-                    @endif
-                  </form>
-
-                </td>
+                <th>ID</th>
+                <th>Логин</th>
+                <th>Роль</th>
+                <th>Активность</th>
+                <th>Последнее обновление</th>
+                <th class="actions-cell">Действия</th>
               </tr>
-            @endforeach
+            </thead>
+
+            <tbody>
+              @foreach($users as $user)
+                <tr>
+                  <td>{{ $user->Id }}</td>
+                  <td>{{ $user->Login }}</td>
+                  <td>{{ $user->role->NameRole ?? '—' }}</td>
+                  <td>
+                    @if($user->IsActive)
+                      <span class="badge yes">Активен</span>
+                    @else
+                      <span class="badge no">Заблокирован</span>
+                    @endif
+                  </td>
+                  <td>{{ \Carbon\Carbon::parse($user->LastUpdate)->format('d.m.Y H:i') }}</td>
+
+                  <td class="actions-cell">
+                    <div class="tactions">
+
+                      {{-- Редактировать (оставляем ссылку как было), просто даём “табличный” класс --}}
+                      <a href="{{ route('admin.users.edit', ['user' => $user->Id]) }}"
+
+                         class="action-btn-row secondary"
+                         title="Редактировать">Редактировать</a>
+
+                      {{-- Toggle (оставляем PATCH и ваш маршрут как было) --}}
+                      <form method="POST"
+                            action="{{ route('admin.users.toggle', $user->Id) }}"
+                            
+                            style="display:inline">
+                        @csrf
+                        @method('PATCH')
+
+                        @if($user->IsActive)
+                          <button type="submit" class="action-btn-row">Заблокировать</button>
+                        @else
+                          <button type="submit" class="action-btn-row secondary">Активировать</button>
+                        @endif
+                      </form>
+
+                    </div>
+                  </td>
+                </tr>
+              @endforeach
             </tbody>
           </table>
         </div>
       @endif
-    </div>
 
+    </div>
   </div>
+
+</div>
+
 </body>
 </html>

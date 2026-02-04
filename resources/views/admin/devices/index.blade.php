@@ -8,7 +8,7 @@
   <style>
     :root {
       --bg: #f6f7fb;
-      --card: #ffffff;
+      --.sheet: #ffffff;
       --text: #1f2937;
       --muted: #6b7280;
       --border: #e5e7eb;
@@ -87,11 +87,9 @@
       transition: background .2s;
     }
     .page-actions .action-btn:hover { background: var(--link-hover); }
-    .actions-cell {
-      white-space: nowrap;
-    }
+ 
 
-    .action-btn-row {
+    .tbtn {
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -105,70 +103,22 @@
       margin-right: 6px;
     }
 
-    .action-btn-row.small {
+    .tbtn.small {
       padding: 3px 8px;
       font-size: 12px;
     }
 
-    .action-btn-row.secondary {
+    .tbtn.secondary {
       background: #eef2ff;
       border-color: #e0e7ff;
     }
 
-    .action-btn-row:hover {
+    .tbtn:hover {
       background: var(--link);
       color: #fff;
       border-color: var(--link-hover);
     }
 
-    /* КАРТОЧКИ */
-    .card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 16px;
-      margin-bottom: 24px;
-      box-shadow: 0 2px 6px rgba(0,0,0,.04);
-    }
-
-    .card h2 { font-size: 20px; margin: 0 0 12px; }
-
-    .table-wrap {
-      width: 100%;
-      overflow: auto;
-      border-radius: 10px;
-      border: 1px solid var(--border);
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      background: #fff;
-    }
-
-    th, td { padding: 10px 12px; text-align: left; white-space: nowrap; }
-
-    thead th {
-      position: sticky;
-      top: 0;
-      background: #f9fafb;
-      font-weight: 600;
-      font-size: 13px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    tbody tr + tr td { border-top: 1px solid var(--border); }
-
-    .badge {
-      padding: 3px 8px;
-      border-radius: 999px;
-      font-size: 12px;
-      border: 1px solid var(--border);
-      display: inline-block;
-    }
-
-    .yes { color: var(--ok); border-color: #bbf7d0; background: #f0fdf4; }
-    .no  { color: var(--no); border-color: #fecaca; background: #fef2f2; }
 
     .empty {
       border: 1px dashed var(--border);
@@ -183,86 +133,89 @@
       flex-wrap: wrap;
     }
   </style>
+  <link rel="stylesheet" href="{{ asset('css/spreadsheet.css') }}">
   <link rel="stylesheet" href="{{ asset('css/header-buttons.css') }}">
 
 </head>
 <body>
 @include('layouts.header', ['headerTitle' => 'Галерея-Проходы'])
 
-
+<div class="spreadsheet page-devices">
   <div class="wrap">
     <div class="page-actions">
       <a href="{{ route('admin.devices.create') }}" class="action-btn">Добавить устройство</a>
 <a href="{{ route('admin.device_pairs.create') }}" class="action-btn">Создать пару устройств</a>
     </div>
 
-    {{-- Контроллеры --}}
-    <div class="card">
-      <h2>Контроллеры</h2>
-      @if($controllers->count() === 0)
-        <div class="empty">
-          <p>Список контроллеров пуст.</p>
-        </div>
-      @else
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>IP</th>
-                <th>Порт</th>
-                <th>Логин</th>
-                <th>Локация</th>
-                <th>Обновлён</th>
-                <th>Активен</th>
-                <th>Действия</th>
-              </tr>
-            </thead>
-            <tbody>
-            @foreach($controllers as $c)
-              <tr>
-                <td>{{ $c->id }}</td>
-                <td>{{ $c->ip ?? $c->ip_address ?? '—' }}</td>
-                <td>{{ $c->port ?? '—' }}</td>
-                <td>{{ $c->login ?? '—' }}</td>
-                <td>{{ $c->location ?? '—' }}</td>
-                {{-- Обновлён --}}
-                <td>{{ \Illuminate\Support\Str::of($c->last_modified_at)->substr(0, 19) }}</td>
-                {{-- Активен --}}
-                <td>
-                  <span class="badge {{ (int)$c->active === 1 ? 'yes' : 'no' }}">
-                    {{ (int)$c->active === 1 ? 'Да' : 'Нет' }}
-                  </span>
-                </td>
-                <td class="actions-cell">
-                  {{-- Заблокировать / Разблокировать --}}
-                  <form method="POST"
-                        action="{{ route('admin.devices.toggle', ['type' => 'controller', 'id' => $c->id]) }}"
-                        style="display:inline">
-                    @csrf
-                    @method('PATCH')
-                    <button type="submit" class="action-btn-row small">
-                      {{ (int)$c->active === 1 ? 'Заблокировать' : 'Разблокировать' }}
-                    </button>
-                  </form>
+   {{-- Контроллеры --}}
+<div class="spreadsheet page-devices sheet">
+  <h2 >Контроллеры</h2>
 
-                  {{-- Редактировать --}}
-                  <a href="{{ route('admin.devices.edit', ['type' => 'controller', 'id' => $c->id]) }}"
-                     class="action-btn-row secondary small">
-                    Редактировать
-                  </a>
-                </td>
-              </tr>
-            @endforeach
-            </tbody>
-          </table>
-        </div>
-      @endif
+  @if($controllers->count() === 0)
+    <p>Список контроллеров пуст.</p>
+  @else
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>IP</th>
+            <th>Порт</th>
+            <th>Логин</th>
+            <th>Локация</th>
+            <th>Обновлён</th>
+            <th>Активен</th>
+            <th>Действия</th>
+          </tr>
+        </thead>
+        <tbody>
+        @foreach($controllers as $c)
+          <tr>
+            <td>{{ $c->id }}</td>
+            <td>{{ $c->ip ?? $c->ip_address ?? '—' }}</td>
+            <td>{{ $c->port ?? '—' }}</td>
+            <td>{{ $c->login ?? '—' }}</td>
+            <td>{{ $c->location ?? '—' }}</td>
+            <td>{{ \Illuminate\Support\Str::of($c->last_modified_at)->substr(0, 19) }}</td>
 
+             <td>
+      <span class="badge {{ $c->active ? 'yes' : 'no' }}">
+        {{ $c->active ? 'Да' : 'Нет' }}
+      </span>
+    </td>
+
+
+           <td class="actions-cell">
+  <div class="tactions">
+    <form method="POST"
+          action="{{ route('admin.devices.toggle', ['type' => 'controller', 'id' => $c->id]) }}"
+          style="display:inline">
+      @csrf
+      @method('PATCH')
+      <button type="submit" class="action-btn-row small">
+        {{ (int)$c->active === 1 ? 'Заблокировать' : 'Разблокировать' }}
+      </button>
+    </form>
+
+    <a href="{{ route('admin.devices.edit', ['type' => 'controller', 'id' => $c->id]) }}"
+       class="action-btn-row secondary small">
+      Редактировать
+    </a>
+  </div>
+</td>
+
+
+          </tr>
+        @endforeach
+        </tbody>
+      </table>
     </div>
+  @endif
+</div>
+
 
     {{-- Камеры --}}
-    <div class="card">
+    <div class="sheet">
       <h2>Камеры</h2>
       @if($cameras->count() === 0)
         <div class="empty"><p>Список камер пуст.</p></div>
@@ -294,29 +247,33 @@
                 {{-- Обновлён --}}
                 <td>{{ \Illuminate\Support\Str::of($cam->last_modified_at)->substr(0, 19) }}</td>
                 {{-- Активна --}}
-                <td>
-                  <span class="badge {{ (int)$cam->active === 1 ? 'yes' : 'no' }}">
-                    {{ (int)$cam->active === 1 ? 'Да' : 'Нет' }}
-                  </span>
-                </td>
-                <td class="actions-cell">
-                  {{-- Заблокировать / Разблокировать --}}
-                  <form method="POST"
-                        action="{{ route('admin.devices.toggle', ['type' => 'camera', 'id' => $cam->id]) }}"
-                        style="display:inline">
-                    @csrf
-                    @method('PATCH')
-                    <button type="submit" class="action-btn-row small">
-                      {{ (int)$cam->active === 1 ? 'Заблокировать' : 'Разблокировать' }}
-                    </button>
-                  </form>
+                 <td>
+     <span class="badge {{ $cam->active ? 'yes' : 'no' }}">
+  {{ $cam->active ? 'Да' : 'Нет' }}
+</span>
 
-                  {{-- Редактировать --}}
-                  <a href="{{ route('admin.devices.edit', ['type' => 'camera', 'id' => $cam->id]) }}"
-                     class="action-btn-row secondary small">
-                    Редактировать
-                  </a>
-                </td>
+    </td>
+
+<td class="actions-cell">
+  <div class="tactions">
+    <form method="POST"
+          action="{{ route('admin.devices.toggle', ['type' => 'camera', 'id' => $cam->id]) }}"
+          style="display:inline">
+      @csrf
+      @method('PATCH')
+      <button type="submit" class="action-btn-row small">
+        {{ $cam->active ? 'Заблокировать' : 'Разблокировать' }}
+      </button>
+    </form>
+
+    <a href="{{ route('admin.devices.edit', ['type' => 'camera', 'id' => $cam->id]) }}"
+       class="action-btn-row secondary small">
+      Редактировать
+    </a>
+  </div>
+</td>
+
+
               </tr>
             @endforeach
             </tbody>
@@ -326,103 +283,101 @@
 
     </div>
 
-           {{-- Пары устройств --}}
-    <div class="card">
-      <h2>Пары устройств</h2>
-      @if($pairs->count() === 0)
-        <div class="empty"><p>Пары устройств отсутствуют.</p></div>
-      @else
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Название</th>
-                <th>Контроллер (IP)</th>
-                <th>Камера вход (IP)</th>
-                <th>Камера выход (IP)</th>
-                <th>Обновлён</th>
-                <th>Активна</th>
-                <th>Действия</th>
-              </tr>
-            </thead>
-            <tbody>
-            @foreach($pairs as $p)
-              @php
-                $ctrl = $p->controller;
-                $camE = $p->entryCamera;
-                $camX = $p->exitCamera;
-              @endphp
-              <tr>
-                <td>{{ $p->Id }}</td>
-                <td>{{ $p->Name }}</td>
+    {{-- Пары устройств --}}
+<div class="sheet">
+  <h2>Пары устройств</h2>
 
-                {{-- Контроллер --}}
-                <td>{{ $ctrl?->ip ?? $ctrl?->ip_address ?? '—' }}</td>
+  @if($pairs->count() === 0)
+    <div class="empty"><p>Пары устройств отсутствуют.</p></div>
+  @else
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Название</th>
+            <th>Контроллер (IP)</th>
+            <th>Камера вход (IP)</th>
+            <th>Камера выход (IP)</th>
+            <th>Обновлён</th>
+            <th>Активна</th>
+            <th>Действия</th>
+          </tr>
+        </thead>
 
-                {{-- Камера вход --}}
-                <td>
-                  @if($camE)
-                    {{ $camE->ip ?? $camE->ip_address ?? '—' }}
-                    @if(!empty($camE->direction_ru))
-                      <span class="badge">{{ $camE->direction_ru }}</span>
-                    @endif
-                  @else
-                    —
-                  @endif
-                </td>
+        <tbody>
+        @foreach($pairs as $p)
+          @php
+            $ctrl = $p->controller;
+            $camE = $p->entryCamera;
+            $camX = $p->exitCamera;
+            $pairId = $p->Id ?? $p->id; // страховка, если accessor id есть
+          @endphp
 
-                {{-- Камера выход --}}
-                <td>
-                  @if($camX)
-                    {{ $camX->ip ?? $camX->ip_address ?? '—' }}
-                    @if(!empty($camX->direction_ru))
-                      <span class="badge">{{ $camX->direction_ru }}</span>
-                    @endif
-                  @else
-                    —
-                  @endif
-                </td>
+          <tr>
+            <td>{{ $pairId }}</td>
+            <td>{{ $p->Name }}</td>
+            <td>{{ $ctrl?->ip ?? $ctrl?->ip_address ?? '—' }}</td>
 
-                {{-- Обновлён --}}
-                <td>{{ \Illuminate\Support\Str::of($p->Updated_at)->substr(0, 19) }}</td>
+            <td>
+              @if($camE)
+                {{ $camE->ip ?? $camE->ip_address ?? '—' }}
+                @if(!empty($camE->direction_ru))
+                  <span class="badge">{{ $camE->direction_ru }}</span>
+                @endif
+              @else
+                —
+              @endif
+            </td>
 
-                {{-- Активна --}}
-                <td>
-                  <span class="badge {{ (int)$p->IsActive === 1 ? 'yes' : 'no' }}">
-                    {{ (int)$p->IsActive === 1 ? 'Да' : 'Нет' }}
-                  </span>
-                </td>
+            <td>
+              @if($camX)
+                {{ $camX->ip ?? $camX->ip_address ?? '—' }}
+                @if(!empty($camX->direction_ru))
+                  <span class="badge">{{ $camX->direction_ru }}</span>
+                @endif
+              @else
+                —
+              @endif
+            </td>
 
-                {{-- Действия --}}
-                <td class="actions-cell">
-                  {{-- Блокировка / разблокировка --}}
-                  <form method="POST"
-      action="{{ route('admin.device_pairs.toggle', ['id' => $p->Id]) }}"
-      style="display:inline">
+            <td>{{ \Illuminate\Support\Str::of($p->Last_modified_at ?? $p->Updated_at)->substr(0, 19) }}</td>
 
-                    @csrf
-                    @method('PATCH')
-                    <button type="submit" class="action-btn-row small">
-                      {{ (int)$p->IsActive === 1 ? 'Заблокировать' : 'Разблокировать' }}
-                    </button>
-                  </form>
+            <td>
+              <span class="badge {{ $p->active ? 'yes' : 'no' }}">
+                {{ $p->active ? 'Да' : 'Нет' }}
+              </span>
+            </td>
 
-                  {{-- Редактировать --}}
-                 <a href="{{ route('admin.device_pairs.edit', ['id' => $p->Id]) }}"
-   class="action-btn-row secondary small">
-    Редактировать
-</a>
+            <td class="actions-cell">
+              <div class="tactions">
+                <form method="POST"
+                      action="{{ route('admin.device_pairs.toggle', ['id' => $pairId]) }}"
 
+                      style="display:inline">
+                  @csrf
+                  @method('PATCH')
+                  <button type="submit" class="action-btn-row small">
+                    {{ $p->active ? 'Заблокировать' : 'Разблокировать' }}
+                  </button>
+                </form>
 
-                </td>
-              </tr>
-            @endforeach
-            </tbody>
-          </table>
-        </div>
-      @endif
+                <a href="{{ route('admin.device_pairs.edit', ['id' => $pairId]) }}"
+
+                   class="action-btn-row secondary small">
+                  Редактировать
+                </a>
+              </div>
+            </td>
+          </tr>
+        @endforeach
+        </tbody>
+      </table>
     </div>
+  @endif
+</div>
+
+  </div>
 
 
 </body>

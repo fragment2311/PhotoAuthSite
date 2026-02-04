@@ -238,6 +238,43 @@ class FtpAuthController extends Controller
         ]);
     }
 
+    public function allPassages(Request $request)
+{
+    $from = $request->query('from');
+    $to   = $request->query('to');
+
+    if (!$from && !$to) {
+        $from = now()->startOfMonth()->toDateString();
+        $to   = now()->endOfMonth()->toDateString();
+    }
+
+    $photos = DB::table('passage as p')
+->leftJoin('controllers as c', 'c.Id', '=', 'p.IdLocation')
+        ->whereNotNull('p.CameraPhoto')
+        ->where('p.CameraPhoto', '<>', '')
+        ->whereBetween('p.AccessTime', [
+            $from . ' 00:00:00',
+            $to   . ' 23:59:59',
+        ])
+        ->orderByDesc('p.AccessTime')
+        ->select([
+            'p.IdPassage',
+            'p.AccessTime',
+            'p.CameraPhoto',
+            DB::raw('c.Location as Point'),
+        ])
+        ->get();
+
+    // Вьюха: resources/views/all.blade.php
+$httpBaseUrl = 'http://192.168.9.134';
+
+return view('all', [
+    'photos' => $photos,
+    'httpBaseUrl' => $httpBaseUrl,
+]);
+}
+
+
     /**
      * Извлекает href="..." из HTML-листинга.
      */

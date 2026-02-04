@@ -1,0 +1,344 @@
+/* === RESET / NORMALIZATION === */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body { margin: 0; padding: 0; }
+
+/* === TYPOGRAPHY === */
+body {
+  font-family: Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.4;
+  color: #333;
+  background: #f9f9f9;
+}
+
+/* === TABLE BASE (ТОЛЬКО ВНУТРИ .spreadsheet) === */
+.spreadsheet table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  margin: 0;
+}
+
+.spreadsheet th,
+.spreadsheet td {
+  padding: 8px 10px;
+  font-size: 14px;
+  text-align: left;
+  border-bottom: 1px solid #e5e7eb;
+  vertical-align: middle;
+}
+
+.spreadsheet th {
+  background: #f3f4f6;
+  font-weight: 600;
+}
+
+.spreadsheet tr:hover td {
+  background: #f9fafb;
+}
+
+/* === FORM ELEMENTS (тоже лучше ограничить) === */
+.spreadsheet input,
+.spreadsheet select,
+.spreadsheet button {
+  font-size: 14px;
+  font-family: inherit;
+}
+
+/* ваши правила */
+.page-passes .filters-row { margin-bottom: 1rem; }
+.page-passes .filters-row input { width: 200px; }
+
+/* === КНОПКИ В ТАБЛИЦЕ (ДОБАВИТЬ) === */
+.spreadsheet .tbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  text-decoration: none;
+  cursor: pointer;
+  line-height: 1.1;
+}
+
+.spreadsheet .tbtn-primary { background:#3b82f6; border-color:#3b82f6; color:#fff; }
+.spreadsheet .tbtn-primary:hover { background:#2563eb; border-color:#2563eb; }
+
+.spreadsheet .tbtn-danger { background:#dc3545; border-color:#dc3545; color:#fff; }
+.spreadsheet .tbtn-danger:hover { background:#c82333; border-color:#c82333; }
+
+
+/* === Spreadsheet card (table container) === */
+.spreadsheet .sheet {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+  padding: 16px 18px 12px;
+  margin-bottom: 24px;
+}
+
+.spreadsheet .sheet-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 12px;
+}
+
+/* === ALIAS: применяем табличные стили к вашей текущей разметке === */
+.table-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  margin: 0;
+}
+
+.table-wrap th,
+.table-wrap td {
+  padding: 8px 10px;
+  font-size: 14px;
+  text-align: left;
+  border-bottom: 1px solid #e5e7eb;
+  vertical-align: middle;
+}
+
+.table-wrap th {
+  background: #f3f4f6;
+  font-weight: 600;
+}
+
+.table-wrap tr:hover td {
+  background: #f9fafb;
+}
+.card {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+  padding: 16px 18px 12px;
+  margin-bottom: 24px;
+}
+.actions-cell {
+  white-space: nowrap;
+}
+
+.action-btn-row {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #111;
+  text-decoration: none;
+  cursor: pointer;
+  line-height: 1.1;
+}
+
+.action-btn-row.secondary {
+  background: #eef2ff;      /* как у ваших “редактировать” */
+  border-color: #c7d2fe;
+  color: #3730a3;
+}
+
+.action-btn-row.small {
+  font-size: 12px;
+  padding: 5px 8px;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  border: 1px solid transparent;
+}
+
+.badge.yes {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #065f46;
+}
+
+.badge.no {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #991b1b;
+}
+
+/* =========================================================
+   DEVICES TABLE LOOK (как было в index.blade.php), но безопасно
+   ========================================================= */
+
+.page-devices .wrap {
+  max-width: 1200px;
+  margin: 120px auto 40px;
+  padding: 0 16px;
+}
+
+/* Карточки */
+.page-devices .card {
+  background: var(--card, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 24px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+}
+
+.page-devices .card h2 {
+  font-size: 20px;
+  margin: 0 0 12px;
+}
+
+/* Обёртка таблицы */
+.page-devices .table-wrap {
+  width: 100%;
+  overflow: auto;
+  border-radius: 10px;
+  border: 1px solid var(--border, #e5e7eb);
+  background: #fff;
+}
+
+/* Таблица */
+.page-devices .table-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  margin: 0;
+}
+
+.page-devices .table-wrap th,
+.page-devices .table-wrap td {
+  padding: 10px 12px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.page-devices .table-wrap thead th {
+  position: sticky;
+  top: 0;
+  background: #f9fafb;
+  font-weight: 600;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
+
+.page-devices .table-wrap tbody tr + tr td {
+  border-top: 1px solid var(--border, #e5e7eb);
+}
+
+.page-devices .actions-cell { white-space: nowrap; }
+
+.page-devices .action-btn-row {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border, #e5e7eb);
+  background: #fff;
+  font-size: 13px;
+  text-decoration: none;
+  cursor: pointer;
+  margin-right: 6px;
+}
+
+.page-devices .action-btn-row.small { padding: 3px 8px; font-size: 12px; }
+.page-devices .action-btn-row.secondary { background:#eef2ff; border-color:#e0e7ff; }
+.page-devices .action-btn-row:hover { background: var(--link, #007bff); color:#fff; border-color: var(--link-hover, #0056b3); }
+
+/* Колонка действий: не переносить, одинаковая ширина */
+.spreadsheet .actions-cell { white-space: nowrap;
+text-align: right;
+ }
+
+/* Заголовок оставляем как было (можно left или center) */
+.spreadsheet thead th:last-child { text-align: center; } /* или center */
+
+/* А вот данные и кнопки — вправо */
+.spreadsheet tbody td:last-child { text-align: right; }
+
+/* Контейнер кнопок — прижат к правому краю */
+.spreadsheet .actions-cell { text-align: right; }
+.spreadsheet .actions-cell .tactions { justify-content: flex-end; }
+
+/* Колонка не растягивается */
+.spreadsheet th:last-child,
+.spreadsheet td:last-child { width: 1%; white-space: nowrap; }
+
+
+.page-actions .action-btn{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid #3b82f6;
+  background: #3b82f6;
+  color: #fff;
+  text-decoration: none;
+  line-height: 1.1;
+  margin-bottom: 10px;
+}
+.spreadsheet .tactions{
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Контейнер для кнопок — одинаковые отступы */
+.spreadsheet .actions-cell .tactions {
+  display: inline-flex;
+  justify-content: flex-end;
+  gap: 10px;                 /* вот “одна дистанция” */
+}
+
+/* Унифицированная кнопка-линк: прозрачный фон + граница */
+.spreadsheet .action-btn-row {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  height: 28px;              /* фиксируем высоту */
+  padding: 0 12px;
+
+  border-radius: 8px;
+  border: 1px solid #cbd5e1; /* граница */
+  background: transparent;   /* прозрачный фон */
+  color: #334155;            /* текст */
+  font-size: 13px;
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
+
+  transition: background .15s, border-color .15s, color .15s;
+}
+
+/* Ховер аккуратный */
+.spreadsheet .action-btn-row:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+  color: #0f172a;
+}
+
+/* Если это <button> */
+.spreadsheet button.action-btn-row {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* “Редактировать” можно чуть выделить, но без заливки */
+.spreadsheet .action-btn-row.secondary {
+  border-color: #bcd2ff;
+  color: #1d4ed8;
+}
+
+.spreadsheet .action-btn-row.secondary:hover {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1e40af;
+}

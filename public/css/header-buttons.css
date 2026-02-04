@@ -1,4 +1,22 @@
 /* Только для шапки, не для остальных кнопок страницы */
+:root{
+  --bg:#f9f9f9;
+  --card:#fff;
+  --text:#333;
+  --link:#007bff;
+  --link-hover:#0056b3;
+  --secondary:#6c757d;
+  --secondary-hover:#5a6268;
+  --danger:#dc3545;
+  --danger-hover:#c82333;
+    --header-h: 72px;      /* высота шапки */
+  --header-pad-x: 32px;  /* боковые отступы */
+  --btn-fs: 16px;        /* размер текста кнопок */
+  --btn-py: 10px;        /* вертикальный padding */
+  --btn-px: 16px;        /* горизонтальный padding */
+  --btn-radius: 8px;
+}
+
 header .btn-group{
   display:flex;
   gap: 12px;
@@ -6,18 +24,26 @@ header .btn-group{
   flex-wrap: wrap;
 }
     header {
+       height: var(--header-h);
+  padding: 0 var(--header-pad-x);
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
       position: fixed;
-      height: 80px;
       top: 0; left: 0; right: 0;
       background: var(--card);
       padding: 1rem 2rem;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
       box-shadow: 0 2px 4px rgba(0,0,0,0.1);
       z-index: 1000;
-      
+      font-size: 16px;
+      box-sizing: border-box;
     }
+    
+header h1{
+  margin:0;
+  font-size: 24px; /* можете поднять до 26-28, если нужно */
+  line-height: 1;
+}
 
    body {
       margin: 0;
@@ -42,18 +68,18 @@ header .btn-group{
     }
     
 header .btn{
+  position: sticky;
   display:inline-flex;
   align-items:center;
   justify-content:center;
-  padding: 11px 18px;
-  height: 40px;
-  font-size: 16px;
+
+  font-size: var(--btn-fs);
+  padding: var(--btn-py) var(--btn-px);
+  border-radius: var(--btn-radius);
   line-height: 1;
-  border-radius: 6px;
   text-decoration:none;
   cursor:pointer;
   white-space: nowrap;
-
   /* КЛЮЧ: не даём кнопке быть прозрачной */
   color: #fff !important;
   background: #2564eb;                /* базовый фон по умолчанию */
@@ -89,3 +115,28 @@ header .btn.btn-danger:hover{
   background: var(--danger-hover, #c82333) !important;
   border-color: var(--danger-hover, #c82333) !important;
 }
+
+/* Контент страницы должен начинаться ниже фиксированной шапки */
+body{
+  padding-top: 90px; /* 80px header + небольшой запас */
+}
+
+    .container {
+      width: 100%;
+      max-width: 1600px;
+      padding: 0 2rem;
+      margin: 0 auto;
+      margin-top: calc(80px + 2rem);
+    }
+
+    .nav-row {
+      position: sticky;
+      top: 80px;
+      margin: 0 auto;
+      max-width: 1600px;
+      padding: .5rem 2rem;
+      background: var(--card);
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      z-index: 900;
+      border-bottom: 1px solid #eee;
+    }

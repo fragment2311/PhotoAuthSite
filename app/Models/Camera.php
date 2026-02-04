@@ -26,6 +26,18 @@ class Camera extends Model
         return null;
     }
 
+ // 🔹 Аксессор: $camera->active
+    public function getActiveAttribute(): int
+    {
+        return (int)($this->attributes['IsActive'] ?? 0);
+    }
+
+    // 🔹 Мутатор: $camera->active = 1 / true / false
+    public function setActiveAttribute($value): void
+    {
+        $this->attributes['IsActive'] = (int)($value ? 1 : 0);
+    }
+
     public function getIpAttribute()
     {
         return $this->pick(['ip_address', 'Ip_address', 'IP_address']);
@@ -51,10 +63,6 @@ class Camera extends Model
         return $this->pick(['Location', 'location']);
     }
 
-    public function getActiveAttribute()
-    {
-        return $this->pick(['IsActive', 'active']);
-    }
 
     public function getLastModifiedAtAttribute()
     {

@@ -8,88 +8,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>FTP-Галерея</title>
   <style>
-    :root {
-      --bg: #f9f9f9;
-      --card: #fff;
-      --text: #333;
-      --link: #007bff;
-      --link-hover: #0056b3;
-      --danger: #dc3545;
-      --danger-hover: #c82333;
-      --secondary: #6c757d;
-      --secondary-hover: #5a6268;
-      --primary: #28a745;
-      --primary-hover: #218838;
-    }
+
     *, *::before, *::after { box-sizing: border-box; }
 
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      min-height: 100vh;
-      font-size: 22px;
-    }
+  
 
-    header {
-      position: fixed;
-      height: 80px;
-      top: 0; left: 0; right: 0;
-      background: var(--card);
-      padding: 1rem 2rem;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-      z-index: 1000;
-      border-radius: 0;
-    }
-    header h1 {
-      margin: 0;
-      font-size: 2rem;
-    }
 
-    .btn {
-      padding: .7rem 1.4rem;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      text-decoration: none;
-      display: inline-block;
-      text-align: center;
-      font-size: 1.1rem;
-      margin-left: .5rem;
-      transition: background .2s;
-      color: #fff;
-    }
-    .btn-primary      { background: var(--link); }
-    .btn-primary:hover{ background: var(--link-hover); }
-    .btn-secondary    { background: var(--secondary); }
-    .btn-secondary:hover{ background: var(--secondary-hover); }
-    .btn-danger       { background: var(--danger); }
-    .btn-danger:hover { background: var(--danger-hover); }
-    .btn-primary, .btn-secondary, .btn-danger { border-radius: 4px; }
 
-    .container {
-      width: 100%;
-      max-width: 1600px;
-      padding: 0 2rem;
-      margin: 0 auto;
-      margin-top: calc(80px + 2rem);
-    }
+.container{
+  margin-top: calc(var(--header-h) + 2rem);
+}
 
-    .nav-row {
-      position: sticky;
-      top: 80px;
-      margin: 0 auto;
-      max-width: 1600px;
-      padding: .5rem 2rem;
-      background: var(--card);
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-      z-index: 900;
-      border-bottom: 1px solid #eee;
-    }
+.nav-row{
+  top: var(--header-h);
+}
+
 
     .search-bar {
       font-size: 1.2rem;
@@ -195,6 +128,8 @@
     #back-to-top:hover { background: var(--link-hover); }
   </style>
   <link rel="stylesheet" href="{{ asset('css/header-buttons.css') }}">
+<link rel="stylesheet" href="{{ asset('vendor/flatpickr/flatpickr.min.css') }}">
+<link rel="stylesheet" href="{{ asset('css/datetime-picker.css') }}">
 
 </head>
 <body>
@@ -220,49 +155,52 @@
       <input type="text" id="search-input" class="search-bar" placeholder="Поиск…">
     </div>
 
-    @if($dir!==$base)
-      <nav class="breadcrumb">
-        @php $rel=str_replace($base.'/','',$dir); $parts=explode('/',$rel); @endphp
-        @foreach($parts as $i=>$p)
-          @if($i>0)<span class="separator">›</span>@endif
-          <span>{{ $p }}</span>
-        @endforeach
-      </nav>
+
+
+   {{-- Папки --}}
+@if(count($items) && !$isShbfOrLkSubfolder)
+
+  <div class="filters-row">
+    <label for="folders-sort">Сортировать папки:</label>
+    <select id="folders-sort">
+      <option value="az" selected>А→Я</option>
+      <option value="za">Я→А</option>
+    </select>
+  </div>
+
+  <h2>Папки</h2>
+  <div id="folders-grid" class="grid">
+
+    {{-- НОВАЯ КНОПКА рядом с SHBF/LK: показываем только в корне --}}
+    @if($dir === $base)
+      <div class="card" data-folder="0-all-passages">
+        <a href="{{ route('all.passages') }}" class="folder-link">
+          📁 Все проходы
+        </a>
+      </div>
     @endif
 
-    {{-- Папки --}}
-    @if(count($items) && !$isShbfOrLkSubfolder)
-    <div class="filters-row">
-      <label for="folders-sort">Сортировать папки:</label>
-      <select id="folders-sort">
-        <option value="az" selected>А→Я</option>
-        <option value="za">Я→А</option>
-      </select>
-    </div>
+    @foreach($items as $item)
+      @php
+        $id = $item['id'];
+        $show = $dir === $base
+                ? in_array($id, ['SHBF','LK'], true)
+                : (
+                    ! $isShbfOrLk
+                    || (is_numeric($id) && $id !== '0')
+                    || in_array($id, ['CardNotFound','Button'], true)
+                  );
+      @endphp
 
-    <h2>Папки</h2>
-    <div id="folders-grid" class="grid">
-      @foreach($items as $item)
-        @php
-          $id = $item['id'];
-          $show = $dir === $base
-                  ? in_array($id, ['SHBF','LK'], true)
-                  : (
-                      ! $isShbfOrLk
-                      || (is_numeric($id) && $id !== '0')
-                      || in_array($id, ['CardNotFound','Button'], true)
-                    );
-        @endphp
-
-        @if($show)
+      @if($show)
         <div class="card" data-folder="{{ Str::lower($item['name']) }}">
           @if($inRootShbfLk)
-          <div class="photo-container">
-            <img src="{{ $item['photo'] }}"
-                 alt="Фото {{ $item['name'] }}"
-                 class="staff-photo"
-                 onerror="this.onerror=null;this.src='{{ $httpBaseUrl }}/entrance_photos/PhotosStaff/NotFound.jpg';">
-          </div>
+            <div class="photo-container">
+              <img src="{{ $item['photo'] }}"
+                   alt="Фото {{ $item['name'] }}"
+                   class="staff-photo"
+                   onerror="this.onerror=null;this.src='{{ $httpBaseUrl }}/entrance_photos/PhotosStaff/NotFound.jpg';">
+            </div>
           @endif
 
           <a href="{{ route('gallery', ['dir' => $item['path']]) }}"
@@ -270,10 +208,12 @@
             📁 {{ $item['name'] }}
           </a>
         </div>
-        @endif
-      @endforeach
-    </div>
-    @endif
+      @endif
+    @endforeach
+
+  </div>
+@endif
+
 
     {{-- Фото --}}
     @if(count($photos))
@@ -293,11 +233,14 @@
         <option value="out">Выход</option>
       </select>
 
-      <label for="date-from">С даты:</label>
-      <input type="date" id="date-from">
+<div class="dt">
+  <label for="date-from">С:</label>
+  <input type="text" id="date-from" class="dt-picker" placeholder="YYYY-MM-DD HH:MM:SS" readonly>
 
-      <label for="date-to">По:</label>
-      <input type="date" id="date-to">
+  <label for="date-to">По:</label>
+  <input type="text" id="date-to" class="dt-picker" placeholder="YYYY-MM-DD HH:MM:SS" readonly>
+</div>
+
 
       <button id="reset-filters">Сбросить</button>
     </div>
@@ -414,9 +357,19 @@ document.addEventListener('DOMContentLoaded', () => {
         show = show && (card.getAttribute('data-type') === typeFilter);
       }
 
-      const cardDate = card.getAttribute('data-date');
-      if (fromDate && cardDate && cardDate < fromDate) show = false;
-      if (toDate   && cardDate && cardDate > toDate)   show = false;
+function toYmdHis(v){
+  if (!v) return '';
+  return v.replace(/[-:\s]/g,''); // '2026-01-31 23:59:59' -> '20260131235959'
+}
+
+const fromTs = toYmdHis(fromDate);
+const toTs   = toYmdHis(toDate);
+
+const cardTs = card.getAttribute('data-timestamp') || '';
+
+if ((fromTs || toTs) && !cardTs) show = false;       // если у фото нет даты — скрыть при активном фильтре
+if (fromTs && cardTs && cardTs < fromTs) show = false;
+if (toTs   && cardTs && cardTs > toTs)   show = false;
 
       if (query) {
         const caption  = card.querySelector('.name')?.textContent.toLowerCase() || '';
@@ -515,6 +468,14 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 @endunless
+
+<script src="{{ asset('vendor/flatpickr/flatpickr.min.js') }}"></script>
+<script src="{{ asset('js/datetime-picker.js') }}"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    initDateTimePickers('.dt-picker');
+  });
+</script>
 
 </body>
 </html>

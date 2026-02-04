@@ -13,11 +13,60 @@ use PhpOffice\PhpSpreadsheet\Settings;
 use PhpOffice\PhpSpreadsheet\Collection\CellsFactory;
 use PhpOffice\PhpSpreadsheet\CachedObjectStorage\CacheBase;
 use PhpOffice\PhpSpreadsheet\CachedObjectStorageFactory;
+use App\Services\LicenseService;
+use Illuminate\Support\Collection;
+
 
 class PassageController extends Controller
 {
     public function index(Request $request)
     {
+// dd(
+//     (new \ReflectionClass(\App\Services\LicenseService::class))->getFileName(),
+//     class_exists(\App\Support\NewtonsoftPayload::class),
+//     class_exists(\App\Services\NewtonsoftPayload::class)
+// );
+
+/** @var LicenseService $license */
+$license = app(LicenseService::class);
+$reportAccess = $license->reportAccess();
+
+$canViewReport = (bool)$reportAccess['allowed_view'];
+$canDownload   = (bool)$reportAccess['allowed_download'];
+$licenseBanner = $reportAccess['banner'] ?? ['show' => false];
+
+// Если отчёт нельзя показывать — НЕ строим запросы к БД, отдаём пустую страницу с баннером
+if (!$canViewReport) {
+    $filters = [
+        'from' => $request->query('from'),
+        'to' => $request->query('to'),
+        'q' => trim((string)$request->query('q', '')),
+        'department' => $request->query('department'),
+        'position' => $request->query('position'),
+        'break_minutes' => (int)$request->query('break_minutes', 20),
+        'sort' => $request->query('sort', 'fio'),
+        'dir' => $request->query('dir', 'asc'),
+    ];
+
+    // пустой paginator, чтобы blade не ломался
+    $rows = new LengthAwarePaginator([], 0, 50, 1, [
+        'path' => $request->url(),
+        'query' => $request->query(),
+    ]);
+
+    // ВАЖНО: $departments/$positions если у вас рассчитываются ниже — тут отдаём пусто
+    return view('passage.index', [
+        'rows' => $rows,
+        'filters' => $filters,
+        'departments' => [],
+        'positions' => [],
+        'licenseBanner' => $licenseBanner,
+        'canViewReport' => $canViewReport,
+        'canDownloadReport' => $canDownload,
+    ]);
+}
+
+
         // =========================
         // Фильтры (как в index.blade.php)
         // =========================
@@ -272,6 +321,9 @@ return view('passage.index', [
     'departments' => $departments,
     'positions'   => $positions,
     'filters'     => $filters,
+    'licenseBanner' => $licenseBanner,
+'canViewReport' => $canViewReport,
+'canDownloadReport' => $canDownload,
 ]);
 
 
@@ -569,6 +621,11 @@ private function buildReportQuery(Request $request)
 
 public function export(Request $request)
 {
+    $reportAccess = app(\App\Services\LicenseService::class)->reportAccess();
+if (empty($reportAccess['allowed_download'])) {
+    abort(403, 'Report download is blocked by license.');
+}
+
     // Экспорт может быть тяжёлым по времени/памяти, но тут строк обычно меньше (по людям).
     @ini_set('memory_limit', '512M');
     @set_time_limit(300);

@@ -118,6 +118,21 @@
   {{-- шапка шаблоном --}}
 @include('layouts.header', ['headerTitle' => 'Галерея'])
 
+@if(!empty($licenseBanner['show']))
+  <div style="
+    margin: 12px 16px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: #fee2e2;
+    border: 1px solid #fecaca;
+    color: #991b1b;
+    font-weight: 700;
+  ">
+    {{ $licenseBanner['text'] ?? 'Проблема с лицензией.' }}
+  </div>
+@endif
+
+
   <div style="padding: 16px;">
     <h2 style="margin: 0 0 12px 0;">Проходы сотрудников</h2>
 
@@ -179,14 +194,21 @@
     </form>
 
 
-<a class="ui-btn is-primary is-sm"
-   href="{{ route('admin.passages.export', request()->query()) }}">
-  Скачать Excel
-</a>
+@if(!empty($canDownloadReport))
+  <a class="ui-btn is-primary is-sm"
+     href="{{ route('admin.passages.export', request()->query()) }}">
+    Скачать Excel
+  </a>
+@else
+  <span class="ui-btn is-primary is-sm" style="opacity:.45; cursor:not-allowed;">
+    Скачать Excel
+  </span>
+@endif
 
 
 
     {{-- Таблица --}}
+    @if(!empty($canViewReport))
     <div style="overflow:auto; background:#fff; border-radius:10px; box-shadow:0 2px 6px rgba(0,0,0,.06);">
       <table style="width:100%; border-collapse:collapse;">
         <thead>
@@ -232,7 +254,19 @@
 <div class="passage-pagination" style="margin-top:12px;">
     {{ $rows->appends($filters ?? [])->links('pagination.passages') }}
 </div>
-
+@else
+  <div style="
+    margin-top: 12px;
+    padding: 14px;
+    border-radius: 10px;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    color: #111827;
+  ">
+    <b>Отчет недоступен.</b><br>
+    Проверьте наличие лицензии или продлите её.
+  </div>
+@endif
 
   </div>
 

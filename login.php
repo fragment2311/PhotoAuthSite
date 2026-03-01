@@ -1,12 +1,68 @@
 <?php
 session_start();
 
-// Параметры подключения к MySQL
-$dbHost = '192.168.9.10';
-$dbPort = 5432;               // по умолчанию 3306
-$dbName = 'Skud';
-$dbUser = 'ctrluser';
-$dbPass = '52000Turn!';
+/**
+ * Пробует загрузить Laravel bootstrap, чтобы при необходимости расшифровать
+ * секреты из storage/app/settings.json (формат AppSettingsFileStore).
+ */
+$laravelBootstrapped = false;
+if (is_file(__DIR__ . '/vendor/autoload.php') && is_file(__DIR__ . '/bootstrap/app.php')) {
+    try {
+        require_once __DIR__ . '/vendor/autoload.php';
+        $app = require __DIR__ . '/bootstrap/app.php';
+        $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+        $laravelBootstrapped = true;
+    } catch (Throwable $e) {
+        $laravelBootstrapped = false;
+    }
+}
+
+/**
+ * Читает настройки приложения из файла.
+ */
+$settings = [];
+$settingsPath = __DIR__ . '/storage/app/settings.json';
+if (is_file($settingsPath)) {
+    $raw = @file_get_contents($settingsPath);
+    if ($raw !== false) {
+        $decoded = json_decode($raw, true);
+        if (is_array($decoded)) {
+            $settings = $decoded;
+        }
+    }
+}
+
+/**
+ * Возвращает значение из settings.json, затем из ENV, затем fallback.
+ */
+$pick = static function (string $settingsKey, string $envKey, $fallback = null) use ($settings) {
+    if (array_key_exists($settingsKey, $settings) && $settings[$settingsKey] !== null && $settings[$settingsKey] !== '') {
+        return $settings[$settingsKey];
+    }
+
+    $env = getenv($envKey);
+    if ($env !== false && $env !== '') {
+        return $env;
+    }
+
+    return $fallback;
+};
+
+// Параметры подключения к БД из settings.json/.env
+$dbHost = (string) $pick('db_host', 'DB_HOST', '127.0.0.1');
+$dbPort = (int) $pick('db_port', 'DB_PORT', 3306);
+$dbName = (string) $pick('db_name', 'DB_DATABASE', 'laravel');
+$dbUser = (string) $pick('db_user', 'DB_USERNAME', 'root');
+$dbPass = (string) $pick('db_pass', 'DB_PASSWORD', '');
+
+// Если пароль в settings.json зашифрован Laravel Crypt::encryptString()
+if ($laravelBootstrapped && $dbPass !== '') {
+    try {
+        $dbPass = Illuminate\Support\Facades\Crypt::decryptString($dbPass);
+    } catch (Throwable $e) {
+        // Оставляем как есть (вдруг пароль был в открытом виде).
+    }
+}
 
 $error = '';
 

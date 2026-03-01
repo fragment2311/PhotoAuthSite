@@ -104,16 +104,22 @@
 </head>
 <body>
   @php use Illuminate\Support\Facades\Auth; @endphp
+  @php
+    $galleryRootDir = trim((string) config('app.gallery_root_dir', 'entrance_photos'), '/');
+    if ($galleryRootDir === '') {
+      $galleryRootDir = 'entrance_photos';
+    }
+  @endphp
 
   <header>
     <h1>
-      <a href="{{ route('gallery', ['dir' => 'entrance_photos']) }}"
+      <a href="{{ route('gallery', ['dir' => $galleryRootDir]) }}"
          style="text-decoration:none;color:inherit;">
         FTP-Галерея
       </a>
     </h1>
     <div>
-      <a href="{{ route('gallery', ['dir' => 'entrance_photos']) }}" class="btn btn-primary">Галерея</a>
+      <a href="{{ route('gallery', ['dir' => $galleryRootDir]) }}" class="btn btn-primary">Галерея</a>
       <a href="{{ route('admin.users') }}" class="btn btn-primary">К списку</a>
       <form method="POST" action="{{ route('logout') }}" style="display:inline">
         @csrf

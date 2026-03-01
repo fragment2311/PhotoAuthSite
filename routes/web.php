@@ -2,12 +2,16 @@
 
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Http\Request;
 use App\Http\Controllers\FtpAuthController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\DevicesController;
 use App\Http\Controllers\Api\DevicePairApiController;
 use App\Http\Controllers\PassageController;
 use Illuminate\Support\Facades\Log;
+use App\Http\Controllers\Admin\SettingsController;
+use App\Services\BootstrapConfigService;
+
 /*
 |--------------------------------------------------------------------------
 | Web Routes
@@ -15,13 +19,41 @@ use Illuminate\Support\Facades\Log;
 */
 
 // 1) Корень
-Route::get('/', function () {
+Route::get('/', function (Request $request) {
+    $bootstrap = app(BootstrapConfigService::class);
+
+    if (!$bootstrap->isConfigured()) {
+        if (Auth::check()) {
+            Auth::logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+        }
+
+        $request->session()->forget('setup_access_granted');
+        return redirect()->route('setup.auth', $request->only('setup_key'));
+    }
+
+    $rootDir = trim((string) config('app.gallery_root_dir', 'entrance_photos'), '/');
+    if ($rootDir === '') {
+        $rootDir = 'entrance_photos';
+    }
+
     return Auth::check()
-        ? redirect()->route('gallery', ['dir' => 'entrance_photos'])
+        ? redirect()->route('gallery', ['dir' => $rootDir])
         : redirect()->route('login');
 })->name('root');
 
 // 2) Гость: вход
+Route::get('/setup/auth', [SettingsController::class, 'setupAuth'])->name('setup.auth');
+Route::post('/setup/auth', [SettingsController::class, 'setupAuthSubmit'])->name('setup.auth.submit');
+
+Route::get('/setup/settings', [SettingsController::class, 'setupIndex'])->name('setup.settings');
+Route::post('/setup/settings', [SettingsController::class, 'setupSave'])->name('setup.settings.save');
+Route::get('/setup/settings/device-pairs-api-token', [SettingsController::class, 'setupDevicePairsApiToken'])
+    ->name('setup.settings.devicePairsApiToken');
+Route::post('/setup/settings/device-pairs-api-token/generate', [SettingsController::class, 'setupGenerateDevicePairsApiToken'])
+    ->name('setup.settings.devicePairsApiToken.generate');
+
 Route::middleware('guest')->group(function () {
     Route::get('/login', [FtpAuthController::class, 'showLogin'])->name('login');
     Route::post('/login', [FtpAuthController::class, 'login']);
@@ -132,6 +164,21 @@ Route::middleware('auth')->group(function () {
             Route::patch('device_pairs/{id}/toggle', [DevicesController::class, 'pairsToggle'])
                 ->whereNumber('id')
                 ->name('device_pairs.toggle');
+
+            
+            //Настройки
+        Route::get('/settings', [SettingsController::class, 'index'])->name('settings.index');
+        Route::post('/settings', [SettingsController::class, 'save'])->name('settings.save');
+
+         Route::post('/settings/test-db', [SettingsController::class, 'testDb'])->name('settings.testDb');
+         Route::post('/settings/test-storage', [SettingsController::class, 'testStorage'])->name('settings.testStorage');
+         Route::post('/settings/license', [SettingsController::class, 'uploadLicense'])
+    ->name('settings.license.upload');
+         Route::get('/settings/device-pairs-api-token', [SettingsController::class, 'devicePairsApiToken'])
+    ->name('settings.devicePairsApiToken');
+         Route::post('/settings/device-pairs-api-token/generate', [SettingsController::class, 'generateDevicePairsApiToken'])
+    ->name('settings.devicePairsApiToken.generate');
+
         });
 
    

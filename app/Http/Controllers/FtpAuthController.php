@@ -2,13 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\BootstrapConfigService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
 use App\Models\Webuser;
 use App\Models\Role;
+use App\Support\MasterAuthUser;
 use Carbon\Carbon;
 
 class FtpAuthController extends Controller
@@ -17,7 +21,7 @@ class FtpAuthController extends Controller
     public function showRegister()
     {
         if (Auth::check()) {
-            return redirect()->route('gallery', ['dir' => 'entrance_photos']);
+            return redirect()->route('gallery', ['dir' => $this->galleryRootDir()]);
         }
         return view('register');
     }
@@ -58,8 +62,20 @@ class FtpAuthController extends Controller
     // === Форма входа ===
     public function showLogin()
     {
+        $bootstrap = app(BootstrapConfigService::class);
+        if (!$bootstrap->isConfigured()) {
+            if (Auth::check()) {
+                Auth::logout();
+                request()->session()->invalidate();
+                request()->session()->regenerateToken();
+            }
+
+            request()->session()->forget('setup_access_granted');
+            return redirect()->route('setup.auth', request()->only('setup_key'));
+        }
+
         if (Auth::check()) {
-            return redirect()->route('gallery', ['dir' => 'entrance_photos'])
+            return redirect()->route('gallery', ['dir' => $this->galleryRootDir()])
                 ->withHeaders([
                     'Cache-Control' => 'no-store, no-cache, must-revalidate',
                     'Pragma'        => 'no-cache',
@@ -77,31 +93,85 @@ class FtpAuthController extends Controller
     // === Редирект по ролям ===
     protected function redirectByRole()
     {
-        return redirect()->route('gallery', ['dir' => 'entrance_photos']);
+        return redirect()->route('gallery', ['dir' => $this->galleryRootDir()]);
     }
 
     // === Логин (действие) ===
     public function login(Request $request)
     {
-        $user = Webuser::where('Login', $request->input('login'))->first();
+        $bootstrap = app(BootstrapConfigService::class);
+        if (!$bootstrap->isConfigured()) {
+            if (Auth::check()) {
+                Auth::logout();
+                $request->session()->invalidate();
+                $request->session()->regenerateToken();
+            }
 
-        if ($user && ! $user->IsActive) {
-            return back()
-                ->withErrors(['login' => 'Ваш аккаунт заблокирован'])
-                ->withInput();
+            $request->session()->forget('setup_access_granted');
+            return redirect()->route('setup.auth', $request->only('setup_key'));
         }
 
-        $credentials = [
-            'Login'    => $request->input('login'),
-            'password' => $request->input('password'),
-        ];
-        if (Auth::attempt($credentials)) {
+        $login = trim((string) $request->input('login', ''));
+        $password = (string) $request->input('password', '');
+        $throttleKey = $this->throttleKey($request, $login === '' ? 'master' : $login);
+
+        if (RateLimiter::tooManyAttempts($throttleKey, 5)) {
+            return back()
+                ->withErrors(['login' => 'Слишком много попыток входа. Попробуйте через минуту.'])
+                ->withInput($request->except('password'));
+        }
+
+        if ($login === '') {
+            if (!$bootstrap->verifyMasterPassword($password)) {
+                RateLimiter::hit($throttleKey, 60);
+
+                return back()
+                    ->withErrors(['login' => 'Неверный логин или пароль'])
+                    ->withInput($request->except('password'));
+            }
+
+            Auth::login(new MasterAuthUser());
+            $request->session()->regenerate();
+            $request->session()->put('setup_access_granted', true);
+            $request->session()->put('master_auth', true);
+            RateLimiter::clear($throttleKey);
+
             return $this->redirectByRole();
         }
 
+        $user = Webuser::where('Login', $login)->first();
+
+        if ($user && ! $user->IsActive) {
+            RateLimiter::hit($throttleKey, 60);
+
+            return back()
+                ->withErrors(['login' => 'Неверный логин или пароль'])
+                ->withInput($request->except('password'));
+        }
+
+        $credentials = [
+            'Login'    => $login,
+            'password' => $password,
+        ];
+
+        if (Auth::attempt($credentials)) {
+            $request->session()->regenerate();
+            $request->session()->forget('master_auth');
+            RateLimiter::clear($throttleKey);
+
+            return $this->redirectByRole();
+        }
+
+        RateLimiter::hit($throttleKey, 60);
+
         return back()
             ->withErrors(['login' => 'Неверный логин или пароль'])
-            ->withInput();
+            ->withInput($request->except('password'));
+    }
+
+    private function throttleKey(Request $request, string $login): string
+    {
+        return Str::lower(trim($login)) . '|' . $request->ip();
     }
 
     // === Выход ===
@@ -122,17 +192,40 @@ class FtpAuthController extends Controller
     // === Галерея (только для авторизованных) ===
     public function gallery(Request $req, $dir = null)
     {
-        $base           = 'entrance_photos';
+        $base           = $this->galleryRootDir();
         $current        = $dir ? trim($dir, '/') : $base;
-        $httpBaseUrl    = 'http://192.168.9.134';
-        $photosBasePath = '/entrance_photos/PhotosStaff/';
+        $httpBaseUrl    = $this->photosHttpBase();
+        $photosBasePath = $this->photosStaffPath();
+        $rootSections   = $this->galleryRootSections();
+        $rootSectionsNorm = array_values(array_filter(array_map(
+            static fn (string $v): string => mb_strtolower(trim($v)),
+            $rootSections
+        ), static fn (string $v): bool => $v !== ''));
 
-        // Разбиваем путь на части
+        // Разбиваем путь на части (абсолютные + относительные к base)
         $parts = explode('/', $current);
+        $partsNorm = array_values(array_filter(array_map(
+            static fn (string $v): string => mb_strtolower(trim($v)),
+            $parts
+        ), static fn (string $v): bool => $v !== ''));
 
-        // Где мы? SHBF/LK и это подпапка?
-        $isShbfOrLk = in_array('SHBF', $parts, true) || in_array('LK', $parts, true);
-        $isShbfOrLkSubfolder = $isShbfOrLk && count($parts) > 2;
+        $basePartsNorm = array_values(array_filter(array_map(
+            static fn (string $v): string => mb_strtolower(trim($v)),
+            explode('/', $base)
+        ), static fn (string $v): bool => $v !== ''));
+
+        $relativePartsNorm = $partsNorm;
+        if (!empty($basePartsNorm) && count($partsNorm) >= count($basePartsNorm)) {
+            $prefix = array_slice($partsNorm, 0, count($basePartsNorm));
+            if ($prefix === $basePartsNorm) {
+                $relativePartsNorm = array_slice($partsNorm, count($basePartsNorm));
+            }
+        }
+
+        // Где мы? В точке (section) и это подпапка точки?
+        $isShbfOrLk = isset($relativePartsNorm[0])
+            && in_array($relativePartsNorm[0], $rootSectionsNorm, true);
+        $isShbfOrLkSubfolder = $isShbfOrLk && count($relativePartsNorm) > 2;
 
         // ФИО для шапки
         $personId = collect($parts)->reverse()->first(fn($seg) => is_numeric($seg));
@@ -143,8 +236,9 @@ class FtpAuthController extends Controller
                 ->value(DB::raw("CONCAT_WS(' ', LastName, FirstName, MiddleName)"));
         }
 
-        // В корне SHBF/{ID} или LK/{ID}?
-        $inRootShbfLk = $isShbfOrLk && count($parts) === 2;
+        // В корне точки (section/{ID})?
+        $inRootShbfLk = $isShbfOrLk
+            && count($relativePartsNorm) === 1;
 
         // Читаем HTML-листинг текущей папки (с анти-кэшем)
         $links = $this->fetchHrefs("{$httpBaseUrl}/{$current}?_=" . time());
@@ -159,6 +253,12 @@ class FtpAuthController extends Controller
                 $photos[] = basename($href);
             }
         }
+
+        $dirsNorm = array_values(array_filter(array_map(
+            static fn (string $v): string => mb_strtolower(trim($v)),
+            $dirs
+        ), static fn (string $v): bool => $v !== ''));
+        $rootSectionsMatchCurrent = count(array_intersect($rootSectionsNorm, $dirsNorm)) > 0;
 
         // ФИО для цифровых папок
         $numericDirs = array_filter($dirs, fn($v) => is_numeric($v));
@@ -189,8 +289,11 @@ class FtpAuthController extends Controller
         foreach ($dirs as $folder) {
             $photoUrl = null;
             if ($inRootShbfLk && is_numeric($folder)) {
-                $fileName = $staffMap[$folder] ?? 'NotFound.png';
-                $photoUrl = "{$httpBaseUrl}{$photosBasePath}{$fileName}";
+                if (isset($staffMap[$folder])) {
+                    $photoUrl = "{$httpBaseUrl}{$photosBasePath}{$staffMap[$folder]}";
+                } else {
+                    $photoUrl = $this->photosNotFoundUrl();
+                }
             }
             $allItems[] = [
                 'id'    => $folder,
@@ -231,6 +334,10 @@ class FtpAuthController extends Controller
             'items'               => $allItems,
             'photos'              => $photos,
             'httpBaseUrl'         => $httpBaseUrl,
+            'rootSections'        => $rootSections,
+            'rootSectionsNorm'    => $rootSectionsNorm,
+            'rootSectionsMatchCurrent' => $rootSectionsMatchCurrent,
+            'notFoundUrl'         => $this->photosNotFoundUrl(),
             'isShbfOrLk'          => $isShbfOrLk,
             'isShbfOrLkSubfolder' => $isShbfOrLkSubfolder,
             'inRootShbfLk'        => $inRootShbfLk,
@@ -238,40 +345,71 @@ class FtpAuthController extends Controller
         ]);
     }
 
-    public function allPassages(Request $request)
+public function allPassages(Request $request)
 {
-    $from = $request->query('from');
-    $to   = $request->query('to');
+    $from = trim((string) $request->query('from', ''));
+    $to   = trim((string) $request->query('to', ''));
+    $q    = trim((string) $request->query('q', ''));
 
-    if (!$from && !$to) {
-        $from = now()->startOfMonth()->toDateString();
-        $to   = now()->endOfMonth()->toDateString();
+    $httpBaseUrl = $this->photosHttpBase();
+
+    $photosQuery = DB::table('passage as p')
+        ->leftJoin('mergedvisitcontrol as mv', 'mv.idmergedvisitcontrol', '=', 'p.IdMergedVisitControl')
+        ->leftJoin('pairdevices as pd', 'pd.Id', '=', 'p.IdPairDevices')
+        ->leftJoin('location as l', 'l.IdLocation', '=', DB::raw('COALESCE(p.IdLocation, pd.Location)'))
+        ->whereNotNull('p.IdMergedVisitControl')
+        ->whereNotNull('p.CameraPhoto')
+        ->where('p.CameraPhoto', '<>', '');
+
+    if ($from !== '') {
+        $fromBound = strlen($from) === 10 ? ($from . ' 00:00:00') : $from;
+        $photosQuery->where('p.AccessTime', '>=', $fromBound);
     }
 
-    $photos = DB::table('passage as p')
-->leftJoin('controllers as c', 'c.Id', '=', 'p.IdLocation')
-        ->whereNotNull('p.CameraPhoto')
-        ->where('p.CameraPhoto', '<>', '')
-        ->whereBetween('p.AccessTime', [
-            $from . ' 00:00:00',
-            $to   . ' 23:59:59',
-        ])
+    if ($to !== '') {
+        $toBound = strlen($to) === 10 ? ($to . ' 23:59:59') : $to;
+        $photosQuery->where('p.AccessTime', '<=', $toBound);
+    }
+
+    if ($q !== '') {
+        $qLike = '%' . $q . '%';
+        $photosQuery->where(function ($w) use ($q, $qLike) {
+            $w->whereRaw("CONCAT_WS(' ', mv.LastName, mv.FirstName, mv.MiddleName) LIKE ?", [$qLike])
+              ->orWhere('p.CameraPhoto', 'like', $qLike)
+              ->orWhereRaw("COALESCE(NULLIF(TRIM(l.LocationName), ''), NULLIF(TRIM(pd.Name), '')) LIKE ?", [$qLike]);
+
+            if (ctype_digit($q)) {
+                $w->orWhere('p.IdMergedVisitControl', (int) $q);
+            }
+        });
+    }
+
+    $photos = $photosQuery
         ->orderByDesc('p.AccessTime')
         ->select([
             'p.IdPassage',
+            'p.IdMergedVisitControl as PersonId',
             'p.AccessTime',
+            'p.AccessType',
             'p.CameraPhoto',
-            DB::raw('c.Location as Point'),
+            DB::raw("CONCAT_WS(' ', mv.LastName, mv.FirstName, mv.MiddleName) as PersonFio"),
+            DB::raw("COALESCE(NULLIF(TRIM(l.LocationName), ''), NULLIF(TRIM(pd.Name), '')) as Point"),
         ])
-        ->get();
+        ->paginate(240)
+        ->appends([
+            'from' => $from,
+            'to' => $to,
+            'q' => $q,
+        ]);
 
-    // Вьюха: resources/views/all.blade.php
-$httpBaseUrl = 'http://192.168.9.134';
-
-return view('all', [
-    'photos' => $photos,
-    'httpBaseUrl' => $httpBaseUrl,
-]);
+    return view('all', [
+        'photos' => $photos,
+        'from' => $from,
+        'to' => $to,
+        'q' => $q,
+        'httpBaseUrl' => $httpBaseUrl,
+        'notFoundUrl' => $this->photosNotFoundUrl(),
+    ]);
 }
 
 
@@ -281,12 +419,16 @@ return view('all', [
     protected function fetchHrefs(string $url): array
     {
         try {
+            $timeout = 6;
+            $retryTimes = 2;
+            $retrySleep = 200;
+
             $html = Http::withHeaders([
                         'Cache-Control' => 'no-cache',
                         'Pragma'        => 'no-cache',
                     ])
-                    ->timeout(6)
-                    ->retry(2, 200)
+                    ->timeout($timeout)
+                    ->retry($retryTimes, $retrySleep)
                     ->get($url)
                     ->body();
 
@@ -343,13 +485,15 @@ return view('all', [
     private function getLastModifiedTimestamp(string $baseUrl, string $current, string $name): ?string
     {
         try {
+            $headTimeout = 4;
+
             $url = rtrim($baseUrl, '/') . '/' . trim($current, '/') . '/' . ltrim($name, '/');
 
             $resp = Http::withHeaders([
                         'Cache-Control' => 'no-cache',
                         'Pragma'        => 'no-cache',
                     ])
-                    ->timeout(4)
+                    ->timeout($headTimeout)
                     ->head($url);
 
             if (!$resp->successful()) {
@@ -381,5 +525,66 @@ return view('all', [
             \Log::error("photoExists error: {$e->getMessage()} for URL {$url}");
             return false;
         }
+    }
+
+    private function galleryRootDir(): string
+    {
+        $value = trim((string) config('app.gallery_root_dir', ''), '/');
+        return $value !== '' ? $value : 'entrance_photos';
+    }
+
+    /** @return array<int, string> */
+    private function galleryRootSections(): array
+    {
+        try {
+            $rows = DB::table('pairdevices as pd')
+                ->leftJoin('location as l', 'l.IdLocation', '=', 'pd.Location')
+                ->where('pd.IsActive', 1)
+                ->selectRaw("COALESCE(NULLIF(TRIM(l.LocationName), ''), NULLIF(TRIM(pd.Name), '')) as section_name")
+                ->get();
+
+            return collect($rows)
+                ->map(static fn ($r): string => trim((string) ($r->section_name ?? '')))
+                ->filter(static fn (string $v): bool => $v !== '')
+                ->unique()
+                ->values()
+                ->all();
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+    private function photosHttpBase(): string
+    {
+        $rawHost = trim((string) config('filesystems.disks.ftp.host', ''));
+        if ($rawHost !== '') {
+            if (preg_match('~^https?://~i', $rawHost)) {
+                return rtrim($rawHost, '/');
+            }
+
+            return 'http://' . rtrim($rawHost, '/');
+        }
+
+        return rtrim((string) config('app.url', ''), '/');
+    }
+
+    private function photosStaffPath(): string
+    {
+        $value = trim((string) config('app.photos_staff_path', '/entrance_photos/PhotosStaff'), '/');
+        return '/' . $value . '/';
+    }
+
+    private function photosNotFoundUrl(): string
+    {
+        $custom = trim((string) config('app.photos_not_found_path', ''), " \t\n\r\0\x0B\"");
+        if ($custom !== '') {
+            if (preg_match('~^https?://~i', $custom)) {
+                return $custom;
+            }
+
+            return rtrim($this->photosHttpBase(), '/') . '/' . ltrim($custom, '/');
+        }
+
+        return rtrim($this->photosHttpBase(), '/') . $this->photosStaffPath() . 'NotFound.jpg';
     }
 }

@@ -15,6 +15,7 @@ class PairDevice extends Model
 
     protected $fillable = [
         'Name',
+        'Location',
         'Controller_id',
         'Entry_camera_id',
         'Exit_camera_id',
@@ -53,6 +54,17 @@ class PairDevice extends Model
     public function getLastModifiedAtAttribute()
     {
         return $this->pick(['Last_modified_at', 'last_modified_at']);
+    }
+
+    public function getLocationIdAttribute()
+    {
+        $value = $this->pick(['Location', 'location']);
+        return $value !== null ? (int) $value : null;
+    }
+
+    public function locationRef()
+    {
+        return $this->belongsTo(Location::class, 'Location', 'IdLocation');
     }
 
     // Связи

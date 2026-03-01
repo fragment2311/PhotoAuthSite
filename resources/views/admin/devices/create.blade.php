@@ -271,15 +271,22 @@ label {
   </style>
 </head>
 <body>
+  @php
+    $galleryRootDir = trim((string) config('app.gallery_root_dir', 'entrance_photos'), '/');
+    if ($galleryRootDir === '') {
+      $galleryRootDir = 'entrance_photos';
+    }
+  @endphp
+
   <header>
     <h1>
-      <a href="{{ route('gallery',['dir'=>'entrance_photos']) }}"
+      <a href="{{ route('gallery',['dir'=>$galleryRootDir]) }}"
          style="text-decoration:none;color:inherit;">
         Галерея-Устройства
       </a>
     </h1>
     <div class="btn-group">
-      <a href="{{ route('gallery', ['dir' => 'entrance_photos']) }}" class="btn btn-primary">В галерею</a>
+      <a href="{{ route('gallery', ['dir' => $galleryRootDir]) }}" class="btn btn-primary">В галерею</a>
       <a href="{{ route('admin.devices.index') }}" class="btn btn-primary">Устройства</a>
       <a href="{{ route('admin.users') }}" class="btn btn-primary">Список пользователей</a>
       <a href="{{ route('admin.register') }}" class="btn btn-primary">Новый пользователь</a>

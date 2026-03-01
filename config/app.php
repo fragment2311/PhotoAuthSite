@@ -54,6 +54,12 @@ return [
 
     'url' => env('APP_URL', 'http://localhost'),
 
+    'gallery_root_dir' => env('GALLERY_ROOT_DIR', 'entrance_photos'),
+
+    'photos_staff_path' => env('PHOTOS_STAFF_PATH', '/entrance_photos/PhotosStaff'),
+
+    'photos_not_found_path' => env('PHOTOS_NOT_FOUND_PATH', ''),
+
     /*
     |--------------------------------------------------------------------------
     | Application Timezone

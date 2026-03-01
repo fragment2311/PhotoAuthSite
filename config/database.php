@@ -33,11 +33,11 @@ return [
 
 'remote_mysql' => [
     'driver'    => 'mysql',
-    'host'      => env('REMOTE_DB_HOST', '192.168.9.10'),
-    'port'      => env('REMOTE_DB_PORT', '5432'),
-    'database'  => env('REMOTE_DB_DATABASE', 'Skud'),
-    'username'  => env('REMOTE_DB_USERNAME', 'ctrluser'),
-    'password'  => env('REMOTE_DB_PASSWORD', '52000Turn!'),
+    'host'      => env('REMOTE_DB_HOST', env('DB_HOST', '127.0.0.1')),
+    'port'      => env('REMOTE_DB_PORT', env('DB_PORT', '3306')),
+    'database'  => env('REMOTE_DB_DATABASE', env('DB_DATABASE', 'laravel')),
+    'username'  => env('REMOTE_DB_USERNAME', env('DB_USERNAME', 'root')),
+    'password'  => env('REMOTE_DB_PASSWORD', env('DB_PASSWORD', '')),
     'charset'   => 'utf8mb4',
     'collation' => 'utf8mb4_unicode_ci',
     'prefix'    => '',

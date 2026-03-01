@@ -266,15 +266,22 @@ label {
   </style>
 </head>
 <body>
+  @php
+    $galleryRootDir = trim((string) config('app.gallery_root_dir', 'entrance_photos'), '/');
+    if ($galleryRootDir === '') {
+      $galleryRootDir = 'entrance_photos';
+    }
+  @endphp
+
   <header>
     <h1>
-      <a href="{{ route('gallery',['dir'=>'entrance_photos']) }}"
+      <a href="{{ route('gallery',['dir'=>$galleryRootDir]) }}"
          style="text-decoration:none;color:inherit;">
         Галерея-Пары устройств
       </a>
     </h1>
     <div class="btn-group">
-      <a href="{{ route('gallery', ['dir' => 'entrance_photos']) }}" class="btn btn-primary">В галерею</a>
+      <a href="{{ route('gallery', ['dir' => $galleryRootDir]) }}" class="btn btn-primary">В галерею</a>
       <a href="{{ route('admin.devices.index') }}" class="btn btn-primary">Устройства</a>
       <a href="{{ route('admin.users') }}" class="btn btn-primary">Список пользователей</a>
       <a href="{{ route('admin.register') }}" class="btn btn-primary">Новый пользователь</a>
@@ -327,6 +334,32 @@ label {
             <div class="form-group">
                 <label for="Name">Название пары</label>
                 <input type="text" id="Name" name="Name" value="{{ old('Name', $pair->name ?? '') }}" required maxlength="100">
+            </div>
+
+            <div class="form-group">
+                <label for="location_id">Точка (локация)</label>
+                <select id="location_id" name="location_id">
+                    <option value="">-- выберите точку --</option>
+                    @foreach(($locations ?? []) as $location)
+                        <option value="{{ $location->IdLocation }}"
+                            {{ (int) old('location_id', $pair->Location ?? 0) === (int) $location->IdLocation ? 'selected' : '' }}>
+                            [#{{ $location->IdLocation }}] {{ $location->LocationName ?? ('Точка ' . $location->IdLocation) }}
+                        </option>
+                    @endforeach
+                </select>
+                <div style="font-size:12px;color:#6b7280;">Можно выбрать существующую или ввести новую ниже.</div>
+            </div>
+
+            <div class="form-group">
+                <label for="new_location">Новая локация (если нет в списке)</label>
+                <input
+                    type="text"
+                    id="new_location"
+                    name="new_location"
+                    value="{{ old('new_location') }}"
+                    maxlength="150"
+                    placeholder="Например: ШБФ"
+                >
             </div>
 
             <div class="form-group">

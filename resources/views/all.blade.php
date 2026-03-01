@@ -7,12 +7,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Все проходы</title>
-
   <style>
     *, *::before, *::after { box-sizing: border-box; }
 
     .container{ margin-top: calc(var(--header-h) + 2rem); }
-    .nav-row{ top: var(--header-h); }
+    .nav-row{
+      top: var(--header-h);
+      display:flex;
+      align-items:center;
+      gap:.5rem;
+      flex-wrap:wrap;
+    }
 
     .search-bar {
       font-size: 1.2rem;
@@ -22,10 +27,22 @@
       border: 1px solid #bbb;
     }
 
+    .btn.btn-primary {
+      background: var(--link);
+      color: #fff;
+    }
+    .btn.btn-primary:hover { background: var(--link-hover); }
+
+    .btn.btn-secondary {
+      background: var(--secondary);
+      color: #fff;
+    }
+    .btn.btn-secondary:hover { background: var(--secondary-hover); }
+
     @media (max-width:700px) {
       .container { padding:0 0.5rem; }
       .nav-row { flex-direction:column; align-items:stretch; gap:.5rem; }
-      .search-bar, .btn-secondary { width:100%; }
+      .search-bar, .nav-row .btn, .filters-row .btn { width:100%; }
     }
 
     .filters-row {
@@ -45,30 +62,19 @@
     }
 
     .grid {
-      display:grid;
-      grid-template-columns:repeat(auto-fill,minmax(240px,1fr));
+      display: grid;
+      grid-template-columns: repeat(auto-fill,minmax(240px,1fr));
       gap: 0.5rem;
       margin-bottom:1.5rem;
     }
-
     .card {
       display:flex;
       flex-direction:column;
       height:320px;
     }
     .card:hover { transform: translateY(-3px); }
-
-    .card img {
-      width:100%;
-      height:180px;
-      object-fit:cover;
-    }
-
-    .card .name {
-      padding: 0.5rem 0.4rem;
-      font-size:1.05rem;
-      word-break:break-word;
-    }
+    .card img { width:100%; height:180px; object-fit:cover; }
+    .card .name { padding: 0.5rem 0.4rem; font-size:1.05rem; word-break:break-word; }
 
     #back-to-top {
       position: fixed;
@@ -90,23 +96,18 @@
       transition: opacity .3s;
       opacity: 0;
     }
-    #back-to-top.show { display:flex; opacity: 1; }
+    #back-to-top.show { display: flex; opacity: 1; }
     #back-to-top:hover { background: var(--link-hover); }
   </style>
-<link rel="stylesheet" href="{{ asset('vendor/flatpickr/flatpickr.min.css') }}">
-<link rel="stylesheet" href="{{ asset('css/datetime-picker.css') }}">
 
   <link rel="stylesheet" href="{{ asset('css/header-buttons.css') }}">
+  <link rel="stylesheet" href="{{ asset('vendor/flatpickr/flatpickr.min.css') }}">
+  <link rel="stylesheet" href="{{ asset('css/datetime-picker.css') }}">
 </head>
-
 <body>
   @php
     use Illuminate\Support\Carbon;
 
-    // Приведение CameraPhoto к URL:
-    // 1) если уже http(s) — используем как есть
-    // 2) если начинается с "/" — приклеиваем к httpBaseUrl
-    // 3) иначе — считаем относительным путём к httpBaseUrl
     function buildPhotoUrl($httpBaseUrl, $path) {
       $path = (string)($path ?? '');
       if ($path === '') return '';
@@ -121,10 +122,10 @@
   <div class="container">
     <div class="nav-row">
       <a href="{{ route('gallery') }}" class="btn btn-secondary">← Назад</a>
-      <input type="text" id="search-input" class="search-bar" placeholder="Поиск…">
+      <input type="text" id="search-input" value="{{ $q ?? '' }}" class="search-bar" placeholder="Поиск по всем сотрудникам…">
+      <button id="apply-filters" type="button" class="btn btn-primary">Найти</button>
     </div>
 
-    {{-- Фото (копия логики из gallery) --}}
     @if(count($photos))
     <div class="filters-row">
       <label for="photos-sort">Сортировать фото:</label>
@@ -142,29 +143,25 @@
         <option value="out">Выход</option>
       </select>
 
-<div class="dt">
-  <label for="date-from">С:</label>
-  <input type="text" id="date-from" class="dt-picker" placeholder="YYYY-MM-DD HH:MM:SS" readonly>
+      <div class="dt">
+        <label for="date-from">С:</label>
+        <input type="text" id="date-from" class="dt-picker" value="{{ $from ?? '' }}" placeholder="YYYY-MM-DD HH:MM:SS" readonly>
 
-  <label for="date-to">По:</label>
-  <input type="text" id="date-to" class="dt-picker" placeholder="YYYY-MM-DD HH:MM:SS" readonly>
-</div>
+        <label for="date-to">По:</label>
+        <input type="text" id="date-to" class="dt-picker" value="{{ $to ?? '' }}" placeholder="YYYY-MM-DD HH:MM:SS" readonly>
+      </div>
 
-      <button id="reset-filters">Сбросить</button>
+      <button id="reset-filters" type="button" class="btn btn-primary">Сбросить</button>
     </div>
 
     <div id="photos-grid" class="grid">
       @foreach ($photos as $p)
-        @php
+      @php
           $dt = !empty($p->AccessTime) ? Carbon::parse($p->AccessTime) : null;
 
           $displayDate = $dt ? $dt->format('d.m.Y, H:i:s') : '';
-          $dateAttr    = $dt ? $dt->format('Y-m-d') : '';
           $timestamp   = $dt ? $dt->format('YmdHis') : '';
 
-          // Определяем тип Вход/Выход:
-          // 1) сначала пробуем из имени файла in_/out_
-          // 2) если не получилось — пробуем по AccessType (если есть)
           $fileNameOnly = basename((string)($p->CameraPhoto ?? ''));
           $typeCode = '';
           $displayType = '';
@@ -173,7 +170,6 @@
               $typeCode    = strtolower($t[1]);
               $displayType = $typeCode === 'in' ? 'Вход' : 'Выход';
           } else {
-              // fallback: AccessType может быть строкой/числом (у вас может отличаться)
               $raw = strtolower((string)($p->AccessType ?? ''));
               if ($raw !== '') {
                   if (str_contains($raw, 'in') || str_contains($raw, 'вход') || $raw === '1') {
@@ -184,33 +180,45 @@
               }
           }
 
-          // Подпись как в gallery: "Вход 26.01.2026, 12:34:56"
-          // Если тип не определён — просто дата/время
+          $fio = trim((string)($p->PersonFio ?? ''));
+          if ($fio === '') {
+              $fio = (string)($p->PersonId ?? '');
+          }
+
           $caption = trim(($displayType ? ($displayType . ' ') : '') . $displayDate);
+          if (!empty($p->Point)) {
+              $caption .= ' · ' . trim((string)$p->Point);
+          }
 
           $url         = buildPhotoUrl($httpBaseUrl ?? '', $p->CameraPhoto) . ($timestamp ? "?v={$timestamp}" : '');
-          $notFoundUrl = rtrim(($httpBaseUrl ?? ''), '/') . "/entrance_photos/PhotosStaff/NotFound.jpg?v=" . time();
-
-          $dataFilename = $fileNameOnly !== '' ? $fileNameOnly : (string)($p->CameraPhoto ?? '');
-        @endphp
+          $notFoundUrl = rtrim((string)($notFoundUrl ?? ''), '/') . '?v=' . time();
+      @endphp
 
         <div class="card"
              data-type="{{ $typeCode }}"
-             data-date="{{ $dateAttr }}"
              data-timestamp="{{ $timestamp }}"
-             data-filename="{{ $dataFilename }}">
+             data-filename="{{ $fileNameOnly }}"
+             data-person="{{ mb_strtolower($fio) }}">
           <a href="{{ $url }}" target="_blank">
             <img src="{{ $url }}"
-                 alt="{{ $dataFilename }}"
+                 alt="{{ $fileNameOnly }}"
                  loading="lazy"
                  decoding="async"
                  width="240" height="180"
                  onerror="this.onerror=null;this.src='{{ $notFoundUrl }}'">
           </a>
-          <div class="name">{{ $caption }}</div>
+          <div class="name">{{ $fio }}<br>{{ $caption }}</div>
         </div>
       @endforeach
     </div>
+    @else
+      <p>Фото проходов не найдены.</p>
+    @endif
+
+    @if(method_exists($photos, 'links'))
+      <div style="margin:1rem 0;">
+        {{ $photos->onEachSide(1)->links() }}
+      </div>
     @endif
 
     <button id="back-to-top" aria-label="Наверх">↑</button>
@@ -229,119 +237,150 @@
     });
   </script>
 
-  {{-- Скрипт фильтрации и сортировки фото (копия из gallery) --}}
   <script>
-document.addEventListener('DOMContentLoaded', () => {
-  const photoSort    = document.getElementById('photos-sort');
-  const photoType    = document.getElementById('photo-type');
-  const dateFrom     = document.getElementById('date-from');
-  const dateTo       = document.getElementById('date-to');
-  const globalSearch = document.getElementById('search-input');
-  const resetBtn     = document.getElementById('reset-filters');
-  const photosGrid   = document.getElementById('photos-grid');
+  document.addEventListener('DOMContentLoaded', () => {
+    const photoSort    = document.getElementById('photos-sort');
+    const photoType    = document.getElementById('photo-type');
+    const dateFrom     = document.getElementById('date-from');
+    const dateTo       = document.getElementById('date-to');
+    const globalSearch = document.getElementById('search-input');
+    const applyBtn     = document.getElementById('apply-filters');
+    const resetBtn     = document.getElementById('reset-filters');
+    const photosGrid   = document.getElementById('photos-grid');
+    const allPassagesUrl = @json(route('all.passages'));
 
-  if (!photosGrid) return;
+    if (!photosGrid || !photoSort || !photoType) return;
 
-  function getQuery() {
-    return (globalSearch?.value || '').trim().toLowerCase();
-  }
+    const urlParams = new URLSearchParams(window.location.search);
+    const initialSort = (urlParams.get('photo_sort') || '').toLowerCase();
+    const initialType = (urlParams.get('photo_type') || '').toLowerCase();
 
-  function applyFilters() {
-    const typeFilter = photoType.value;
-    const fromDate   = dateFrom.value;
-    const toDate     = dateTo.value;
-    const query      = getQuery();
-
-    const cards = Array.from(photosGrid.querySelectorAll('.card'));
-    for (const card of cards) {
-      let show = true;
-
-      if (typeFilter !== 'all') {
-        show = show && (card.getAttribute('data-type') === typeFilter);
-      }
-
-function toYmdHis(v){
-  if (!v) return '';
-  return v.replace(/[-:\s]/g,''); // '2026-01-31 23:59:59' -> '20260131235959'
-}
-
-const fromTs = toYmdHis(fromDate);
-const toTs   = toYmdHis(toDate);
-
-const cardTs = card.getAttribute('data-timestamp') || '';
-
-if ((fromTs || toTs) && !cardTs) show = false;       // если у фото нет даты — скрыть при активном фильтре
-if (fromTs && cardTs && cardTs < fromTs) show = false;
-if (toTs   && cardTs && cardTs > toTs)   show = false;
-
-      if (query) {
-        const caption  = card.querySelector('.name')?.textContent.toLowerCase() || '';
-        const filename = (card.getAttribute('data-filename') || '').toLowerCase();
-        if (!caption.includes(query) && !filename.includes(query)) show = false;
-      }
-
-      card.style.display = show ? '' : 'none';
+    if (['date-desc', 'date-asc', 'az', 'za'].includes(initialSort)) {
+      photoSort.value = initialSort;
     }
-    sortPhotos();
-  }
+    if (['all', 'in', 'out'].includes(initialType)) {
+      photoType.value = initialType;
+    }
 
-  function sortPhotos() {
-    const mode  = photoSort.value;
-    const cards = Array.from(photosGrid.querySelectorAll('.card'))
-                       .filter(c => c.style.display !== 'none');
+    function buildServerUrl() {
+      const params = new URLSearchParams(window.location.search);
 
-    cards.sort((a, b) => {
-      if (mode === 'az' || mode === 'za') {
-        const ta = (a.querySelector('.name')?.textContent || '').trim().toLowerCase();
-        const tb = (b.querySelector('.name')?.textContent || '').trim().toLowerCase();
-        return mode === 'za'
-          ? tb.localeCompare(ta, 'ru')
-          : ta.localeCompare(tb, 'ru');
-      } else {
+      const q = (globalSearch?.value || '').trim();
+      const from = dateFrom?.value || '';
+      const to = dateTo?.value || '';
+      const sort = photoSort?.value || 'date-desc';
+      const type = photoType?.value || 'all';
+
+      if (q) params.set('q', q); else params.delete('q');
+      if (from) params.set('from', from); else params.delete('from');
+      if (to) params.set('to', to); else params.delete('to');
+      if (sort !== 'date-desc') params.set('photo_sort', sort); else params.delete('photo_sort');
+      if (type !== 'all') params.set('photo_type', type); else params.delete('photo_type');
+
+      params.delete('page');
+
+      const qs = params.toString();
+      return qs ? `${allPassagesUrl}?${qs}` : allPassagesUrl;
+    }
+
+    function applyServerFilters() {
+      const nextUrl = buildServerUrl();
+      const currentUrl = `${window.location.origin}${window.location.pathname}${window.location.search}`;
+      if (nextUrl === currentUrl) return;
+      window.location.assign(nextUrl);
+    }
+
+    function applyAllFiltersByButton() {
+      applyFilters();
+      applyServerFilters();
+    }
+
+    function toYmdHis(v) {
+      if (!v) return '';
+      return v.replace(/[-:\s]/g, '');
+    }
+
+    function applyFilters() {
+      const typeFilter = photoType.value;
+      const fromTs = toYmdHis(dateFrom?.value || '');
+      const toTs   = toYmdHis(dateTo?.value || '');
+      const cards = Array.from(photosGrid.querySelectorAll('.card'));
+
+      for (const card of cards) {
+        let show = true;
+        if (typeFilter !== 'all') {
+          show = show && (card.getAttribute('data-type') === typeFilter);
+        }
+
+        const cardTs = card.getAttribute('data-timestamp') || '';
+        if ((fromTs || toTs) && !cardTs) show = false;
+        if (fromTs && cardTs && cardTs < fromTs) show = false;
+        if (toTs && cardTs && cardTs > toTs) show = false;
+
+        card.style.display = show ? '' : 'none';
+      }
+      sortPhotos();
+    }
+
+    function sortPhotos() {
+      const mode  = photoSort.value;
+      const cards = Array.from(photosGrid.querySelectorAll('.card'))
+                         .filter(c => c.style.display !== 'none');
+
+      cards.sort((a, b) => {
+        if (mode === 'az' || mode === 'za') {
+          const ta = (a.querySelector('.name')?.textContent || '').trim().toLowerCase();
+          const tb = (b.querySelector('.name')?.textContent || '').trim().toLowerCase();
+          return mode === 'za'
+            ? tb.localeCompare(ta, 'ru')
+            : ta.localeCompare(tb, 'ru');
+        }
+
         const ta = a.getAttribute('data-timestamp') || '';
         const tb = b.getAttribute('data-timestamp') || '';
         return mode === 'date-asc'
           ? ta.localeCompare(tb)
           : tb.localeCompare(ta);
+      });
+
+      cards.forEach(c => photosGrid.appendChild(c));
+    }
+
+    function resetFilters() {
+      photoSort.value = 'date-desc';
+      photoType.value = 'all';
+      if (dateFrom) dateFrom.value = '';
+      if (dateTo)   dateTo.value   = '';
+      if (globalSearch) globalSearch.value = '';
+
+      const hasServerFilters = new URLSearchParams(window.location.search).toString().length > 0;
+      if (hasServerFilters) {
+        window.location.assign(allPassagesUrl);
+        return;
+      }
+
+      applyFilters();
+    }
+
+    if (applyBtn) applyBtn.addEventListener('click', applyAllFiltersByButton);
+    if (globalSearch) globalSearch.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        applyAllFiltersByButton();
       }
     });
+    if (resetBtn) resetBtn.addEventListener('click', resetFilters);
 
-    cards.forEach(c => photosGrid.appendChild(c));
-  }
-
-  function resetFilters(e) {
-    if (e) e.preventDefault();
-    photoSort.value = 'date-desc';
-    photoType.value = 'all';
-    dateFrom.value  = '';
-    dateTo.value    = '';
-    if (globalSearch) globalSearch.value = '';
     applyFilters();
-  }
-
-  photoSort.addEventListener('change', sortPhotos);
-  photoType.addEventListener('change', applyFilters);
-  dateFrom.addEventListener('change', applyFilters);
-  dateTo.addEventListener('change', applyFilters);
-  if (globalSearch) globalSearch.addEventListener('input', applyFilters);
-  if (resetBtn)     resetBtn.addEventListener('click', resetFilters);
-
-  const today = new Date().toISOString().split('T')[0];
-  if (dateFrom) dateFrom.max = today;
-  if (dateTo)   dateTo.max   = today;
-
-  applyFilters();
-});
-  </script>
-<script src="{{ asset('vendor/flatpickr/flatpickr.min.js') }}"></script>
-<script src="{{ asset('js/datetime-picker.js') }}"></script>
-<script>
-  document.addEventListener('DOMContentLoaded', () => {
-    initDateTimePickers('.dt-picker');
   });
-</script>
+  </script>
 
-
-
+  <script src="{{ asset('vendor/flatpickr/flatpickr.min.js') }}"></script>
+  <script src="{{ asset('js/datetime-picker.js') }}"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      initDateTimePickers('.dt-picker');
+    });
+  </script>
 </body>
 </html>

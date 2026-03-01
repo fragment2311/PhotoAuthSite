@@ -4,10 +4,13 @@ namespace App\Http\Controllers;
 
 use App\Models\ControllerDevice;
 use App\Models\Camera;
+use App\Models\Location;
 use App\Models\PairDevice;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class DevicesController extends Controller
 {
@@ -186,11 +189,16 @@ class DevicesController extends Controller
     {
         $controllers = ControllerDevice::where('IsActive', 1)->orderBy('id')->get();
         $cameras     = Camera::where('IsActive', 1)->orderBy('id')->get();
+        $locations   = DB::table('location')
+            ->select('IdLocation', 'LocationName')
+            ->orderBy('LocationName')
+            ->get();
 
         return view('admin.devices.pairs_create', [
             'pair'        => null,
             'controllers' => $controllers,
             'cameras'     => $cameras,
+            'locations'   => $locations,
         ]);
     }
 
@@ -199,11 +207,15 @@ class DevicesController extends Controller
      */
     public function pairsStore(Request $request)
     {
+        $this->ensureAdminAccess();
+
         $controllersTable = (new ControllerDevice())->getTable();
         $camerasTable     = (new Camera())->getTable();
 
         $validated = $request->validate([
             'Name'            => 'required|string|max:100',
+            'location_id'     => ['nullable', 'integer', 'exists:location,IdLocation', 'required_without:new_location'],
+            'new_location'    => ['nullable', 'string', 'max:150', 'required_without:location_id', 'regex:/^[\pL\pN\s\-.,()#\/]+$/u'],
             'controller_id'   => "required|integer|exists:{$controllersTable},id",
             'entry_camera_id' => "required|integer|exists:{$camerasTable},id",
             'exit_camera_id'  => "nullable|integer|different:entry_camera_id|exists:{$camerasTable},id",
@@ -211,16 +223,24 @@ class DevicesController extends Controller
             'IsActive'        => 'nullable|boolean',
         ]);
 
-        $pair = new PairDevice();
-        $pair->Name            = $validated['Name'];
-        $pair->Controller_id   = $validated['controller_id'];
-        $pair->Entry_camera_id = $validated['entry_camera_id'];
-        $pair->Exit_camera_id  = $validated['exit_camera_id'] ?? null;
-        $pair->Comment         = $validated['Comment'] ?? null;
-        $pair->IsActive        = !empty($validated['IsActive']) ? 1 : 0;
-        $pair->Last_modified_at = now();
+        DB::transaction(function () use ($validated): void {
+            $resolvedLocationId = $this->resolveLocationId(
+                isset($validated['location_id']) ? (int) $validated['location_id'] : null,
+                $validated['new_location'] ?? null
+            );
 
-        $pair->save();
+            $pair = new PairDevice();
+            $pair->Name             = $validated['Name'];
+            $pair->Location         = $resolvedLocationId;
+            $pair->Controller_id    = $validated['controller_id'];
+            $pair->Entry_camera_id  = $validated['entry_camera_id'];
+            $pair->Exit_camera_id   = $validated['exit_camera_id'] ?? null;
+            $pair->Comment          = $validated['Comment'] ?? null;
+            $pair->IsActive         = !empty($validated['IsActive']) ? 1 : 0;
+            $pair->Last_modified_at = now();
+
+            $pair->save();
+        });
 
         return redirect()
             ->route('admin.devices.index')
@@ -236,11 +256,16 @@ class DevicesController extends Controller
 
         $controllers = ControllerDevice::where('IsActive', 1)->orderBy('id')->get();
         $cameras     = Camera::where('IsActive', 1)->orderBy('id')->get();
+        $locations   = DB::table('location')
+            ->select('IdLocation', 'LocationName')
+            ->orderBy('LocationName')
+            ->get();
 
         return view('admin.devices.pairs_create', [
             'pair'        => $pair,
             'controllers' => $controllers,
             'cameras'     => $cameras,
+            'locations'   => $locations,
         ]);
     }
 
@@ -249,6 +274,8 @@ class DevicesController extends Controller
      */
     public function pairsUpdate(Request $request, int $id)
     {
+        $this->ensureAdminAccess();
+
         $pair = PairDevice::findOrFail($id);
 
         $controllersTable = (new ControllerDevice())->getTable();
@@ -256,6 +283,8 @@ class DevicesController extends Controller
 
         $validated = $request->validate([
             'Name'            => 'required|string|max:100',
+            'location_id'     => ['nullable', 'integer', 'exists:location,IdLocation', 'required_without:new_location'],
+            'new_location'    => ['nullable', 'string', 'max:150', 'required_without:location_id', 'regex:/^[\pL\pN\s\-.,()#\/]+$/u'],
             'controller_id'   => "required|integer|exists:{$controllersTable},id",
             'entry_camera_id' => "required|integer|exists:{$camerasTable},id",
             'exit_camera_id'  => "nullable|integer|different:entry_camera_id|exists:{$camerasTable},id",
@@ -263,15 +292,23 @@ class DevicesController extends Controller
             'IsActive'        => 'nullable|boolean',
         ]);
 
-        $pair->Name            = $validated['Name'];
-        $pair->Controller_id   = $validated['controller_id'];
-        $pair->Entry_camera_id = $validated['entry_camera_id'];
-        $pair->Exit_camera_id  = $validated['exit_camera_id'] ?? null;
-        $pair->Comment         = $validated['Comment'] ?? null;
-        $pair->IsActive        = !empty($validated['IsActive']) ? 1 : 0;
-        $pair->Last_modified_at = now();
+        DB::transaction(function () use ($validated, $pair): void {
+            $resolvedLocationId = $this->resolveLocationId(
+                isset($validated['location_id']) ? (int) $validated['location_id'] : null,
+                $validated['new_location'] ?? null
+            );
 
-        $pair->save();
+            $pair->Name             = $validated['Name'];
+            $pair->Location         = $resolvedLocationId;
+            $pair->Controller_id    = $validated['controller_id'];
+            $pair->Entry_camera_id  = $validated['entry_camera_id'];
+            $pair->Exit_camera_id   = $validated['exit_camera_id'] ?? null;
+            $pair->Comment          = $validated['Comment'] ?? null;
+            $pair->IsActive         = !empty($validated['IsActive']) ? 1 : 0;
+            $pair->Last_modified_at = now();
+
+            $pair->save();
+        });
 
         return redirect()
             ->route('admin.devices.index')
@@ -292,6 +329,44 @@ class DevicesController extends Controller
         return redirect()
             ->route('admin.devices.index')
             ->with('status', 'Статус пары обновлён.');
+    }
+
+    private function resolveLocationId(?int $locationId, ?string $newLocation): int
+    {
+        $name = preg_replace('/\s+/u', ' ', trim((string) $newLocation));
+        if ($name !== '') {
+            $normalized = mb_strtolower($name);
+
+            $existing = Location::query()
+                ->whereRaw('LOWER(TRIM(LocationName)) = ?', [$normalized])
+                ->first();
+
+            if ($existing) {
+                return (int) $existing->IdLocation;
+            }
+
+            $created = Location::create([
+                'LocationName' => $name,
+            ]);
+
+            return (int) $created->IdLocation;
+        }
+
+        if (!empty($locationId)) {
+            return (int) $locationId;
+        }
+
+        throw ValidationException::withMessages([
+            'location_id' => 'Нужно выбрать существующую локацию или ввести новую.',
+        ]);
+    }
+
+    private function ensureAdminAccess(): void
+    {
+        $user = auth()->user();
+        $role = mb_strtolower(trim((string) data_get($user, 'role.NameRole', '')));
+
+        abort_unless($user && $role === 'администратор', 403, 'Доступ запрещён.');
     }
 
     // =========================

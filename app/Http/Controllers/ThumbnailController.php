@@ -23,7 +23,12 @@ class ThumbnailController extends Controller
         //    (можно сменить на storage/app/public/thumbs/...)
         $disk      = Storage::disk('public');
         $thumbKey  = "thumbs/{$width}/{$path}";
-        $originalBase = config('app.ftp_gallery_url', 'http://192.168.9.134');
+        $rawHost = trim((string) config('filesystems.disks.ftp.host', ''));
+        if ($rawHost !== '' && !preg_match('~^https?://~i', $rawHost)) {
+            $originalBase = 'http://' . rtrim($rawHost, '/');
+        } else {
+            $originalBase = rtrim($rawHost !== '' ? $rawHost : (string) config('app.url', ''), '/');
+        }
 
         // 2) Если миниатюры ещё нет — скачиваем оригинал и создаём
         if (! $disk->exists($thumbKey)) {
@@ -53,9 +58,11 @@ class ThumbnailController extends Controller
 
         // 3) Читаем готовый файл и отдаем его с нужными заголовками
         $file = $disk->path($thumbKey);
+        $maxAge = 31536000;
+
         return response()->file($file, [
             'Content-Type'  => 'image/png',
-            'Cache-Control' => 'public, max-age=31536000, immutable',
+            'Cache-Control' => "public, max-age={$maxAge}, immutable",
         ]);
     }
 }

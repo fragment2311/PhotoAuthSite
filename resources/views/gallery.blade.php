@@ -160,6 +160,12 @@
    {{-- Папки --}}
 @if(count($items) && !$isShbfOrLkSubfolder)
 
+  @if($dir === $base && !($rootSectionsMatchCurrent ?? true))
+    <div class="help" style="margin:0 0 .75rem;color:#b45309;">
+      В корневой папке не найдены каталоги, совпадающие с активными точками из пар устройств.
+    </div>
+  @endif
+
   <div class="filters-row">
     <label for="folders-sort">Сортировать папки:</label>
     <select id="folders-sort">
@@ -183,8 +189,12 @@
     @foreach($items as $item)
       @php
         $id = $item['id'];
+        $idNorm = mb_strtolower(trim((string) $id));
         $show = $dir === $base
-                ? in_array($id, ['SHBF','LK'], true)
+                ? (
+                    in_array($idNorm, $rootSectionsNorm ?? [], true)
+                    || !($rootSectionsMatchCurrent ?? true)
+                  )
                 : (
                     ! $isShbfOrLk
                     || (is_numeric($id) && $id !== '0')
@@ -199,7 +209,7 @@
               <img src="{{ $item['photo'] }}"
                    alt="Фото {{ $item['name'] }}"
                    class="staff-photo"
-                   onerror="this.onerror=null;this.src='{{ $httpBaseUrl }}/entrance_photos/PhotosStaff/NotFound.jpg';">
+                   onerror="this.onerror=null;this.src='{{ $notFoundUrl ?? '' }}';">
             </div>
           @endif
 
@@ -288,7 +298,7 @@
         }
 
         $url         = "{$httpBaseUrl}/" . ltrim("$dir/$name", '/') . "?v={$timestamp}";
-        $notFoundUrl = "{$httpBaseUrl}/entrance_photos/PhotosStaff/NotFound.jpg?v=" . time();
+        $notFoundUrl = rtrim((string)($notFoundUrl ?? ''), '/') . '?v=' . time();
     @endphp
 
       <div class="card"

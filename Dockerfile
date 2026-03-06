@@ -28,14 +28,18 @@ RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
 
 # Apache
 RUN a2enmod rewrite headers expires \
- && echo 'Listen 8082' >> /etc/apache2/ports.conf
+ && echo 'Listen 27017' >> /etc/apache2/ports.conf
 
 # VHost
 COPY deploy/000-default.conf /etc/apache2/sites-available/000-default.conf
 RUN a2ensite 000-default && apache2ctl -t
 
+# Composer в runtime (для автоустановки зависимостей при старте)
+COPY --from=vendor /usr/bin/composer /usr/local/bin/composer
+
 WORKDIR /var/www/html
 COPY --from=vendor /app /var/www/html
+COPY docker/entrypoint.sh /usr/local/bin/app-entrypoint
 
 # >>> гарантируем наличие нужных директорий перед правами
 RUN set -eux; \
@@ -46,9 +50,11 @@ RUN set -eux; \
       storage/framework/views \
       storage/logs \
       bootstrap/cache; \
+    chmod +x /usr/local/bin/app-entrypoint; \
     chown -R www-data:www-data storage bootstrap/cache; \
     chmod -R ug+rwX storage bootstrap/cache
 
 ENV APACHE_RUN_USER=www-data APACHE_RUN_GROUP=www-data
-EXPOSE 8082
+EXPOSE 27017
+ENTRYPOINT ["app-entrypoint"]
 CMD ["apache2-foreground"]

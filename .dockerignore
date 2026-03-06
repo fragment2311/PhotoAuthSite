@@ -1,6 +1,10 @@
 .git
 .gitignore
+
 **/.env
+**/.env.*
+!**/.env.example
+!**/.env.example.*
 node_modules
 vendor
 
@@ -11,5 +15,4 @@ storage
 tests
 *.md
 *.log
-docker-compose*.yml
 # НЕ исключай папку docker/ — она нужна для php.ini

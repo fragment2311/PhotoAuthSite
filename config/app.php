@@ -54,9 +54,15 @@ return [
 
     'url' => env('APP_URL', 'http://localhost'),
 
-    'gallery_root_dir' => env('GALLERY_ROOT_DIR', 'entrance_photos'),
+    'gallery_root_dir_default' => env('GALLERY_ROOT_DIR_DEFAULT', ''),
 
-    'photos_staff_path' => env('PHOTOS_STAFF_PATH', '/entrance_photos/PhotosStaff'),
+    'photos_staff_path_default' => env('PHOTOS_STAFF_PATH_DEFAULT', ''),
+
+    'gallery_root_dir' => env('GALLERY_ROOT_DIR', env('GALLERY_ROOT_DIR_DEFAULT', '')),
+
+    'photos_staff_path' => env('PHOTOS_STAFF_PATH', env('PHOTOS_STAFF_PATH_DEFAULT', '')),
+
+    'photos_http_scheme' => env('PHOTOS_HTTP_SCHEME', ''),
 
     'photos_not_found_path' => env('PHOTOS_NOT_FOUND_PATH', ''),
 

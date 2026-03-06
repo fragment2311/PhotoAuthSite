@@ -202,6 +202,7 @@ public function index(
         // Галерея/HTTP
         'gallery_root_dir' => 'nullable|string|max:255',
         'photos_staff_path' => 'nullable|string|max:255',
+        'photos_http_scheme' => 'nullable|in:http,https',
         'photos_not_found_upload' => 'nullable|file|mimes:jpg,jpeg,png,gif,webp,bmp,svg|max:4096',
 
         // Фото-хранилище
@@ -231,6 +232,9 @@ public function index(
         // setup master password
         'setup_master_password' => 'nullable|string|min:6|max:255',
         'setup_master_password_confirmation' => 'nullable|string',
+
+        // Отправка отчётов ошибок
+        'allow_error_reports' => 'nullable|in:0,1',
     ]);
 
     $masterPassword = (string) $request->input('setup_master_password', '');
@@ -270,6 +274,9 @@ public function index(
     }
 
     unset($data['photos_not_found_upload']);
+
+    // Чекбокс: при отсутствии в запросе считаем выключенным
+    $data['allow_error_reports'] = $request->boolean('allow_error_reports') ? '1' : '0';
 
     // важно: пустые поля паролей НЕ затирают существующие
     $store->save($data, keepEncryptedSecrets: true);

@@ -34,9 +34,10 @@ class GenerateThumbnails extends Command
         $ftpDisk = Storage::disk('ftp');
         $publicDisk = Storage::disk('public');
         $widths = [240, 1024]; // Standard width for previews and a larger one for lightbox
-        $rootDir = trim((string) config('app.gallery_root_dir', 'entrance_photos'), '/');
+        $rootDir = trim((string) config('app.gallery_root_dir', config('app.gallery_root_dir_default', '')), '/');
         if ($rootDir === '') {
-            $rootDir = 'entrance_photos';
+            $this->warn('gallery_root_dir не задан, генерация миниатюр пропущена.');
+            return self::SUCCESS;
         }
 
         // Get all image paths from the FTP storage

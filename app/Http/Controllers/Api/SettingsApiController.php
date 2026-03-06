@@ -15,6 +15,11 @@ class SettingsApiController extends Controller
         $dbHost = trim((string) ($s['db_host'] ?? ''));
         $dbUser = trim((string) ($s['db_user'] ?? ''));
         $dbPass = (string) ($s['db_pass'] ?? '');
+        $photoFtpsPass = (string) ($s['photo_ftps_pass'] ?? '');
+        $dahuaFtpsPass = (string) ($s['dahua_sdk_ftps_pass'] ?? '');
+        if ($dahuaFtpsPass === '') {
+            $dahuaFtpsPass = $photoFtpsPass;
+        }
 
         $photoServerCertThumbprint = $s['photo_ftps_server_cert_thumbprint'] ?? null;
         if (is_string($photoServerCertThumbprint)) {
@@ -32,13 +37,13 @@ class SettingsApiController extends Controller
                 'host'    => $s['photo_ftps_host'] ?? null,
                 'port'    => $s['photo_ftps_port'] ?? null,
                 'user'    => $s['photo_ftps_user'] ?? null,
-                'pass'    => null,
+                'pass'    => $photoFtpsPass,
                 'dir'     => $s['photo_ftps_dir'] ?? null,
                 'passive' => (int)($s['photo_ftps_passive'] ?? 0),
                 'ssl'     => (int)($s['photo_ftps_ssl'] ?? 1),
                 'server_cert_thumbprint' => $photoServerCertThumbprint,
                 'allow_self_signed'      => (int)($s['photo_ftps_allow_self_signed'] ?? 0),
-                'has_password' => !empty($s['photo_ftps_pass']),
+                'has_password' => $photoFtpsPass !== '',
             ],
         ];
 
@@ -85,15 +90,15 @@ class SettingsApiController extends Controller
             'files'        => $dahuaFiles,
             'ftps' => [
                 'host'                    => $s['dahua_sdk_ftps_host'] ?? null,
-                'port'                    => (string)($s['dahua_sdk_ftps_port'] ?? ($s['photo_ftps_port'] ?? '21')),
+                'port'                    => (string)($s['dahua_sdk_ftps_port'] ?? ($s['photo_ftps_port'] ?? (string) config('ftp.port', 21))),
                 'user'                    => $s['dahua_sdk_ftps_user'] ?? null,
-                'pass'                    => null,
+                'pass'                    => $dahuaFtpsPass,
                 'dir'                     => $s['dahua_sdk_ftps_dir'] ?? null,
                 'passive'                 => (int)($s['dahua_sdk_ftps_passive'] ?? ($s['photo_ftps_passive'] ?? 0)),
                 'ssl'                     => (int)($s['dahua_sdk_ftps_ssl'] ?? ($s['photo_ftps_ssl'] ?? 1)),
                 'server_cert_thumbprint'  => $dahuaServerCertThumbprint,
                 'allow_self_signed'       => $dahuaAllowSelfSigned,
-                'has_password'            => !empty($s['dahua_sdk_ftps_pass'] ?? $s['photo_ftps_pass'] ?? ''),
+                'has_password'            => $dahuaFtpsPass !== '',
             ],
         ];
 
@@ -115,12 +120,13 @@ class SettingsApiController extends Controller
         }
 
         return response()->json([
+            'allow_error_reports' => (int)($s['allow_error_reports'] ?? 0),
             'db' => [
                 'host' => $s['db_host'] ?? null,
                 'port' => $s['db_port'] ?? null,
                 'name' => $s['db_name'] ?? null,
                 'user' => $s['db_user'] ?? null,
-                'pass' => null,
+                'pass' => $dbPass,
                 'has_password' => $dbPass !== '',
                 'is_configured' => $dbHost !== '' && $dbUser !== '',
             ],

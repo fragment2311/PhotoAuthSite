@@ -33,10 +33,7 @@ Route::get('/', function (Request $request) {
         return redirect()->route('setup.auth', $request->only('setup_key'));
     }
 
-    $rootDir = trim((string) config('app.gallery_root_dir', 'entrance_photos'), '/');
-    if ($rootDir === '') {
-        $rootDir = 'entrance_photos';
-    }
+    $rootDir = trim((string) config('app.gallery_root_dir', config('app.gallery_root_dir_default', '')), '/');
 
     return Auth::check()
         ? redirect()->route('gallery', ['dir' => $rootDir])

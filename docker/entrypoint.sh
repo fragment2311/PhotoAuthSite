@@ -3,9 +3,22 @@ set -e
 
 cd /var/www/html
 
-# Установить зависимости, если vendor отсутствует
-if [ ! -d vendor ]; then
-  composer install --no-dev --prefer-dist --no-progress --no-interaction
+AUTO_INSTALL_PHP_DEPS="${AUTO_INSTALL_PHP_DEPS:-true}"
+
+# Установить PHP-зависимости автоматически, если их нет
+# или если composer.lock новее, чем vendor/autoload.php
+if [ "$AUTO_INSTALL_PHP_DEPS" = "true" ]; then
+  NEED_COMPOSER_INSTALL="false"
+
+  if [ ! -f vendor/autoload.php ]; then
+    NEED_COMPOSER_INSTALL="true"
+  elif [ -f composer.lock ] && [ composer.lock -nt vendor/autoload.php ]; then
+    NEED_COMPOSER_INSTALL="true"
+  fi
+
+  if [ "$NEED_COMPOSER_INSTALL" = "true" ]; then
+    composer install --no-dev --prefer-dist --no-progress --no-interaction --optimize-autoloader
+  fi
 fi
 
 # Создать storage-link при необходимости

@@ -390,12 +390,12 @@
         <div class="row">
           <div class="field" style="min-width:320px;">
             <label for="gallery_root_dir">Корневая папка галереи</label>
-            <input id="gallery_root_dir" name="gallery_root_dir" value="{{ $s['gallery_root_dir'] ?? '' }}" placeholder="Напр.: entrance_photos">
+            <input id="gallery_root_dir" name="gallery_root_dir" value="{{ $s['gallery_root_dir'] ?? '' }}" placeholder="Напр.: photos/main">
           </div>
 
           <div class="field" style="min-width:360px;">
             <label for="photos_staff_path">Путь к staff-фото</label>
-            <input id="photos_staff_path" name="photos_staff_path" value="{{ $s['photos_staff_path'] ?? '' }}" placeholder="Напр.: /entrance_photos/PhotosStaff">
+            <input id="photos_staff_path" name="photos_staff_path" value="{{ $s['photos_staff_path'] ?? '' }}" placeholder="Напр.: /photos/main/PhotosStaff">
           </div>
         </div>
 
@@ -534,6 +534,22 @@
               </button>
               <span id="copy_device_pairs_token_status" class="copy-token-status" aria-live="polite"></span>
             </div>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:1rem;">
+          <div class="field" style="min-width:420px;">
+            <label for="allow_error_reports" style="display:flex; align-items:center; gap:.6rem; cursor:pointer;">
+              <input
+                id="allow_error_reports"
+                name="allow_error_reports"
+                type="checkbox"
+                value="1"
+                style="width:auto;"
+                @checked((string)($s['allow_error_reports'] ?? '0') === '1')
+              >
+              <span>Разрешить отправку отчётов об ошибках</span>
+            </label>
           </div>
         </div>
 

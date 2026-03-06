@@ -267,10 +267,7 @@ label {
 </head>
 <body>
   @php
-    $galleryRootDir = trim((string) config('app.gallery_root_dir', 'entrance_photos'), '/');
-    if ($galleryRootDir === '') {
-      $galleryRootDir = 'entrance_photos';
-    }
+    $galleryRootDir = trim((string) config('app.gallery_root_dir', config('app.gallery_root_dir_default', '')), '/');
   @endphp
 
   <header>

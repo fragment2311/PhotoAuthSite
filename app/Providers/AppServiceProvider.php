@@ -27,18 +27,27 @@ class AppServiceProvider extends ServiceProvider
                 return array_key_exists($key, $settings) ? $settings[$key] : $fallback;
             };
 
-            $galleryRootDir = trim((string) $pick('gallery_root_dir', config('app.gallery_root_dir', 'entrance_photos')), '/');
+            $galleryRootDir = trim((string) $pick('gallery_root_dir', config('app.gallery_root_dir', config('app.gallery_root_dir_default', ''))), '/');
             if ($galleryRootDir === '') {
-                $galleryRootDir = 'entrance_photos';
+                $galleryRootDir = trim((string) config('app.gallery_root_dir_default', ''), '/');
             }
 
-            $photosStaffPath = '/' . trim((string) $pick('photos_staff_path', config('app.photos_staff_path', '/entrance_photos/PhotosStaff')), '/');
+            $photosStaffRaw = trim((string) $pick('photos_staff_path', config('app.photos_staff_path', config('app.photos_staff_path_default', ''))), '/');
+            if ($photosStaffRaw === '') {
+                $photosStaffRaw = trim((string) config('app.photos_staff_path_default', ''), '/');
+            }
+            $photosStaffPath = $photosStaffRaw !== '' ? ('/' . $photosStaffRaw) : '';
             $photosNotFoundPath = trim((string) $pick('photos_not_found_path', config('app.photos_not_found_path', '')));
+            $photosHttpScheme = trim((string) $pick('photos_http_scheme', config('app.photos_http_scheme', '')));
+            if (!in_array($photosHttpScheme, ['http', 'https'], true)) {
+                $photosHttpScheme = '';
+            }
 
             config([
                 'app.gallery_root_dir' => $galleryRootDir,
                 'app.photos_staff_path' => $photosStaffPath,
                 'app.photos_not_found_path' => $photosNotFoundPath,
+                'app.photos_http_scheme' => $photosHttpScheme,
 
                 'database.connections.remote_mysql.host' => (string) $pick('db_host', config('database.connections.remote_mysql.host')),
                 'database.connections.remote_mysql.port' => (string) $pick('db_port', config('database.connections.remote_mysql.port')),
@@ -48,14 +57,18 @@ class AppServiceProvider extends ServiceProvider
             ]);
 
             $ftpHost = (string) $pick('photo_ftps_host', config('ftp.host', ''));
-            $ftpPort = (int) $pick('photo_ftps_port', config('ftp.port', 21));
-            $ftpRoot = (string) $pick('photo_ftps_dir', config('ftp.root', '/'));
+            $ftpPort = (int) $pick('photo_ftps_port', config('ftp.port'));
+            $ftpRoot = (string) $pick('photo_ftps_dir', config('ftp.root'));
             $ftpUser = (string) $pick('photo_ftps_user', config('ftp.username', ''));
             $ftpPass = (string) $pick('photo_ftps_pass', config('ftp.password', ''));
             $ftpTimeout = max(1, (int) config('ftp.timeout', 30));
+            $defaultFtpPort = max(1, (int) config('ftp.port', 21));
 
             if ($ftpPort <= 0) {
-                $ftpPort = 21;
+                $ftpPort = $defaultFtpPort;
+            }
+            if (trim($ftpRoot) === '') {
+                $ftpRoot = (string) config('ftp.root', '/');
             }
             if (trim($ftpRoot) === '') {
                 $ftpRoot = '/';

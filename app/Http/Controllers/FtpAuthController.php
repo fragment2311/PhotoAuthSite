@@ -530,7 +530,11 @@ public function allPassages(Request $request)
     private function galleryRootDir(): string
     {
         $value = trim((string) config('app.gallery_root_dir', ''), '/');
-        return $value !== '' ? $value : 'entrance_photos';
+        if ($value !== '') {
+            return $value;
+        }
+
+        return trim((string) config('app.gallery_root_dir_default', ''), '/');
     }
 
     /** @return array<int, string> */
@@ -557,12 +561,28 @@ public function allPassages(Request $request)
     private function photosHttpBase(): string
     {
         $rawHost = trim((string) config('filesystems.disks.ftp.host', ''));
+        $scheme = trim((string) config('app.photos_http_scheme', ''));
+        if (!in_array($scheme, ['http', 'https'], true)) {
+            $scheme = '';
+        }
+
         if ($rawHost !== '') {
             if (preg_match('~^https?://~i', $rawHost)) {
                 return rtrim($rawHost, '/');
             }
 
-            return 'http://' . rtrim($rawHost, '/');
+            if ($scheme === '') {
+                $appUrl = trim((string) config('app.url', ''));
+                if (preg_match('~^https?://~i', $appUrl)) {
+                    $scheme = parse_url($appUrl, PHP_URL_SCHEME) ?: '';
+                }
+            }
+
+            if ($scheme === '') {
+                $scheme = 'http';
+            }
+
+            return $scheme . '://' . rtrim($rawHost, '/');
         }
 
         return rtrim((string) config('app.url', ''), '/');
@@ -570,7 +590,15 @@ public function allPassages(Request $request)
 
     private function photosStaffPath(): string
     {
-        $value = trim((string) config('app.photos_staff_path', '/entrance_photos/PhotosStaff'), '/');
+        $value = trim((string) config('app.photos_staff_path', ''), '/');
+        if ($value === '') {
+            $value = trim((string) config('app.photos_staff_path_default', ''), '/');
+        }
+
+        if ($value === '') {
+            return '/';
+        }
+
         return '/' . $value . '/';
     }
 

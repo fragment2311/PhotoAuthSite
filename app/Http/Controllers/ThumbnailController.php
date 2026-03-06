@@ -24,8 +24,24 @@ class ThumbnailController extends Controller
         $disk      = Storage::disk('public');
         $thumbKey  = "thumbs/{$width}/{$path}";
         $rawHost = trim((string) config('filesystems.disks.ftp.host', ''));
+        $scheme = trim((string) config('app.photos_http_scheme', ''));
+        if (!in_array($scheme, ['http', 'https'], true)) {
+            $scheme = '';
+        }
+
         if ($rawHost !== '' && !preg_match('~^https?://~i', $rawHost)) {
-            $originalBase = 'http://' . rtrim($rawHost, '/');
+            if ($scheme === '') {
+                $appUrl = trim((string) config('app.url', ''));
+                if (preg_match('~^https?://~i', $appUrl)) {
+                    $scheme = parse_url($appUrl, PHP_URL_SCHEME) ?: '';
+                }
+            }
+
+            if ($scheme === '') {
+                $scheme = 'http';
+            }
+
+            $originalBase = $scheme . '://' . rtrim($rawHost, '/');
         } else {
             $originalBase = rtrim($rawHost !== '' ? $rawHost : (string) config('app.url', ''), '/');
         }

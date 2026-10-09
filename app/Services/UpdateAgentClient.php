@@ -9,11 +9,12 @@ class UpdateAgentClient
 {
     public function request(string $method, string $path, array $payload = []): array
     {
-        $url = rtrim((string) config('update.agent_url'), '/');
+        $runtime = app(UpdateRuntime::class);
+        $url = $runtime->agentUrl();
         $token = (string) config('update.agent_token');
 
         if ($url === '' || strlen($token) < 32) {
-            throw new RuntimeException('Обновление не настроено на сервере.');
+            throw new RuntimeException('Для обнаруженного режима ' . $runtime->mode() . ' не настроен агент обновления.');
         }
 
         $request = Http::acceptJson()
@@ -21,11 +22,18 @@ class UpdateAgentClient
             ->connectTimeout(3)
             ->timeout(12);
 
-        $response = match (strtoupper($method)) {
-            'GET' => $request->get($url . $path),
-            'POST' => $request->post($url . $path, $payload),
-            default => throw new RuntimeException('Недопустимая операция обновления.'),
-        };
+        try {
+            $response = match (strtoupper($method)) {
+                'GET' => $request->get($url . $path),
+                'POST' => $request->post($url . $path, $payload),
+                default => throw new RuntimeException('Недопустимая операция обновления.'),
+            };
+        } catch (\Illuminate\Http\Client\ConnectionException $exception) {
+            $mode = $runtime->mode();
+            $platform = $runtime->platform();
+            $where = $mode === 'docker' ? 'агент в Docker Compose' : 'агент ОС на ' . $platform;
+            throw new RuntimeException('Не удалось связаться с ' . $where . '. Проверьте, что агент установлен и запущен.', 0, $exception);
+        }
 
         $data = $response->json();
         if (!is_array($data)) {

@@ -32,6 +32,7 @@ services:
       dockerfile: Dockerfile
     environment:
       PHOTOAUTHAPP_DIR: /workspace
+      UPDATE_MODE: docker
       UPDATE_AGENT_TOKEN: ${UPDATE_AGENT_TOKEN:-}
       UPDATE_BRANCH: main
     volumes:

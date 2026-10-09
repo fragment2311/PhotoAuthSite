@@ -5,7 +5,7 @@
          data-recovery-url="{{ route('admin.updates.acknowledgeRecovery') }}"
          data-csrf="{{ csrf_token() }}">
   <h2 style="margin-top:0">Обновление PhotoAuthApp</h2>
-  <p class="update-status" id="photoauth-update-status" role="status" aria-live="polite">Проверяем доступность обновления…</p>
+  <p class="update-status" id="photoauth-update-status" role="status" aria-live="polite">Определяем способ запуска и проверяем обновления…</p>
   <div id="photoauth-update-details" hidden>
     <p><b>Установленная версия:</b> <span id="photoauth-update-current"></span></p>
     <p><b>Доступная версия:</b> <span id="photoauth-update-available"></span></p>
@@ -103,7 +103,12 @@
     checkButton.hidden = Boolean(data.available);
     cancelButton.hidden = !data.available;
     recoveryButton.hidden = true;
-    statusNode.textContent = data.available ? 'Доступно обновление.' : 'Установлена актуальная версия.';
+    const runtime = data.runtime_mode === 'docker'
+      ? 'Docker'
+      : `без Docker (${data.runtime_platform === 'windows' ? 'Windows' : 'Linux'})`;
+    statusNode.textContent = data.available
+      ? `Доступно обновление. Способ обновления: ${runtime}.`
+      : `Установлена актуальная версия. Способ обновления: ${runtime}.`;
   }
 
   function showJob(job) {

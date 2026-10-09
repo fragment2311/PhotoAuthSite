@@ -17,9 +17,11 @@ from urllib.parse import urlparse
 
 
 ROOT = Path(os.environ.get("PHOTOAUTHAPP_DIR", "/workspace"))
-STATE_FILE = Path("/data/state.json")
+STATE_DIR = Path(os.environ.get("UPDATE_STATE_DIR", "/data"))
+STATE_FILE = STATE_DIR / "state.json"
 TOKEN = os.environ.get("UPDATE_AGENT_TOKEN", "")
 BRANCH = os.environ.get("UPDATE_BRANCH", "main")
+MODE = os.environ.get("UPDATE_MODE", "docker").lower()
 LOCK = threading.Lock()
 STATE_LOCK = threading.Lock()
 STATE: dict = {"check": None, "check_job": None, "job": None, "installed_sha": None}
@@ -99,6 +101,8 @@ def update_check() -> dict:
         "changes": commits,
         "migrations": migrations,
         "checked_at": int(time.time()),
+        "runtime_mode": MODE,
+        "runtime_platform": "windows" if os.name == "nt" else "linux",
     }
 
 
@@ -119,10 +123,18 @@ def run_update(target_sha: str, run_migrations: bool, job_id: str) -> None:
         env["CURRENT_SHA"] = check["current_sha"]
         env["TARGET_SHA"] = target_sha
         env["RUN_MIGRATIONS"] = "1" if run_migrations else "0"
-        env["BACKUP_DIR"] = "/data/schema-backups"
+        env["BACKUP_DIR"] = str(STATE_DIR / "schema-backups")
         try:
+            if MODE == "docker":
+                command = ["bash", "./update-photoauthapp.sh"]
+            elif MODE == "host" and os.name == "nt":
+                command = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(ROOT / "update-photoauthapp-host.ps1")]
+            elif MODE == "host":
+                command = ["bash", "./update-photoauthapp-host.sh"]
+            else:
+                raise RuntimeError("Неподдерживаемый режим агента обновлений")
             proc = subprocess.run(
-                ["bash", "./update-photoauthapp.sh"],
+                command,
                 cwd=ROOT,
                 env=env,
                 text=True,
@@ -215,7 +227,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self._route() == "/health":
-            return self._json(200, {"status": "ok"})
+            return self._json(200, {"status": "ok", "mode": MODE, "platform": "windows" if os.name == "nt" else "linux"})
         if not self._authorized():
             return self._json(401, {"error": "Не авторизовано"})
         if self._route() == "/status":
@@ -276,10 +288,14 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
+    if MODE not in {"docker", "host"}:
+        raise SystemExit("UPDATE_MODE должен быть docker или host")
     read_state()
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
     if len(TOKEN) < 32:
         raise SystemExit("UPDATE_AGENT_TOKEN должен содержать не менее 32 символов случайного секрета")
-    host = os.environ.get("UPDATE_AGENT_HOST", "0.0.0.0")
+    default_host = "127.0.0.1" if MODE == "host" else "0.0.0.0"
+    host = os.environ.get("UPDATE_AGENT_HOST", default_host)
     port = int(os.environ.get("UPDATE_AGENT_PORT", "19100"))
     ThreadingHTTPServer((host, port), Handler).serve_forever()
 

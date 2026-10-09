@@ -4,8 +4,10 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Pagination\LengthAwarePaginator;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -21,315 +23,173 @@ class PassageController extends Controller
 {
     public function index(Request $request)
     {
-// dd(
-//     (new \ReflectionClass(\App\Services\LicenseService::class))->getFileName(),
-//     class_exists(\App\Support\NewtonsoftPayload::class),
-//     class_exists(\App\Services\NewtonsoftPayload::class)
-// );
+        $applied = (string)$request->query('applied', '0') === '1';
+        $params = $this->resolveReportParams($request);
 
-/** @var LicenseService $license */
-$license = app(LicenseService::class);
-$reportAccess = $license->reportAccess();
+        $from = $params['from'];
+        $to = $params['to'];
+        $q = $params['q'];
+        $department = $params['department'];
+        $position = $params['position'];
+        $breakMinutes = $params['breakMinutes'];
+        $periodStart = $params['periodStart'];
+        $periodEnd = $params['periodEnd'];
+        $qFrom = $params['qFrom'];
+        $qTo = $params['qTo'];
 
-$canViewReport = (bool)$reportAccess['allowed_view'];
-$canDownload   = (bool)$reportAccess['allowed_download'];
-$licenseBanner = $reportAccess['banner'] ?? ['show' => false];
-
-// Если отчёт нельзя показывать — НЕ строим запросы к БД, отдаём пустую страницу с баннером
-if (!$canViewReport) {
-    $filters = [
-        'from' => $request->query('from'),
-        'to' => $request->query('to'),
-        'q' => trim((string)$request->query('q', '')),
-        'department' => $request->query('department'),
-        'position' => $request->query('position'),
-        'break_minutes' => (int)$request->query('break_minutes', 20),
-        'sort' => $request->query('sort', 'fio'),
-        'dir' => $request->query('dir', 'asc'),
-    ];
-
-    // пустой paginator, чтобы blade не ломался
-    $rows = new LengthAwarePaginator([], 0, 50, 1, [
-        'path' => $request->url(),
-        'query' => $request->query(),
-    ]);
-
-    // ВАЖНО: $departments/$positions если у вас рассчитываются ниже — тут отдаём пусто
-    return view('passage.index', [
-        'rows' => $rows,
-        'filters' => $filters,
-        'departments' => [],
-        'positions' => [],
-        'licenseBanner' => $licenseBanner,
-        'canViewReport' => $canViewReport,
-        'canDownloadReport' => $canDownload,
-    ]);
-}
-
-
-        // =========================
-        // Фильтры (как в index.blade.php)
-        // =========================
-        $from = $request->query('from');
-        $to   = $request->query('to');
-        $q    = trim((string)$request->query('q', ''));
-        $department = $request->query('department');
-$position   = $request->query('position');
-$breakMinutes = (int) $request->query('break_minutes', 20);
-if ($breakMinutes < 0) $breakMinutes = 0;
-if ($breakMinutes > 240) $breakMinutes = 240; // защита, можно поменять
-
-
-        // нормализация строки поиска для копипаста (NBSP и т.п.)
-$q = preg_replace('/[\x{00A0}\x{2007}\x{202F}]/u', ' ', $q);
-$q = preg_replace('/\s+/u', ' ', $q);
-$q = trim($q);
-$rows = $this->buildReportQuery($request)->paginate(50)->withQueryString();
-
-
-// дефолт: текущий месяц
-if (!$from && !$to) {
-    $from = now()->startOfMonth()->toDateString();
-    $to   = now()->endOfMonth()->toDateString();
-}
-
-        // валидация дат
-        if ($from && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $from)) $from = null;
-        if ($to   && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $to))   $to   = null;
-
-        $periodFrom = $from ? Carbon::parse($from)->startOfDay() : now()->subDays(7)->startOfDay();
-        $periodTo   = $to   ? Carbon::parse($to)->endOfDay()     : now()->endOfDay();
-
-        // буфер для смен на границах
-        $qFrom = (clone $periodFrom)->subDay();
-        $qTo   = (clone $periodTo)->addDay();
-
-
-        // =========================
-// Периметр (двери входа/выхода из здания)
-// =========================
-$perimeter = config('worktime.perimeter', []);
-$perimeterMatch = $perimeter['match'] ?? 'contains'; // 'exact' | 'contains'
-$perimeterDoors = $perimeter['doors'] ?? [];
-
-
-        // =========================
-        // Сортировка (allowlist)
-        // =========================
-$sort = $request->query('sort', 'fio');
-$dir  = strtolower((string)$request->query('dir', 'asc')) === 'desc' ? 'desc' : 'asc';
+        $sort = (string)$request->query('sort', 'fio');
+        $dir  = strtolower((string)$request->query('dir', 'asc')) === 'desc' ? 'desc' : 'asc';
 
         $allowedSort = [
-            'fio'         => 'fio',
-            'id'          => 'employee_id',
-            'department'  => 'department',
-            'position'    => 'position',
-            'worked_hours'=> 'worked_hours',
+            'fio'          => 'fio',
+            'department'   => 'department',
+            'position'     => 'position',
+            'worked_hours' => 'worked_hours',
         ];
-        if (!isset($allowedSort[$sort])) $sort = 'fio';
-
-
-        // =========================
-        // Дедуп: одинаковые события -> MIN(IdPassage)
-        // =========================
-$dedup = DB::table('passage')
-    ->selectRaw('MIN(IdPassage) as IdPassage')
-    ->whereBetween('AccessTime', [$qFrom, $qTo])
-    ->whereNotNull('IdMergedVisitControl')
-    ->when(!empty($perimeterDoors), function ($qq) use ($perimeterDoors, $perimeterMatch) {
-        $qq->where(function ($w) use ($perimeterDoors, $perimeterMatch) {
-            foreach ($perimeterDoors as $d) {
-                $d = trim((string)$d);
-                if ($d === '') continue;
-
-                if ($perimeterMatch === 'exact') {
-                    $w->orWhereRaw('TRIM(DoorID) = ?', [$d]);
-                } else {
-                    $w->orWhere('DoorID', 'like', '%' . $d . '%');
-                }
-            }
-            
-        });
-    })
-    ->groupBy('IdMergedVisitControl', 'AccessTime', 'AccessType', 'DoorID');
-
-
-
-$filters = [
-    'from'       => $from,
-    'to'         => $to,
-    'q'          => $q,
-    'department' => $department,
-    'position'   => $position,
-    'sort'       => $sort,
-    'dir'        => $dir,
-    'break_minutes' => $breakMinutes,
-];
-
-
-
-        // =========================
-        // События + человек
-        // =========================
-        $eventsQ = DB::table('passage as p')
-            ->joinSub($dedup, 'd', function ($join) {
-                $join->on('p.IdPassage', '=', 'd.IdPassage');
-            })
-            ->join('MergedVisitControl as m', 'm.idmergedvisitcontrol', '=', 'p.IdMergedVisitControl')
-            ->select([
-                'p.IdMergedVisitControl',
-                'p.AccessTime',
-                'p.AccessType',
-                'p.DoorID',
-                'm.LastName',
-                'm.FirstName',
-                'm.MiddleName',
-                'm.Department',
-                'm.Position',
-            ])
-                ->when($department, function ($q) use ($department) {
-    $q->where('m.Department', $department);
-})
-->when($position, function ($q) use ($position) {
-    $q->where('m.Position', $position);
-})
-            ->orderBy('p.IdMergedVisitControl')
-            ->orderBy('p.AccessTime');
-
-        // Поиск q: ФИО / таб.№ / устройство
-        if ($q !== '') {
-            $isNumeric = ctype_digit($q);
-
-            $eventsQ->where(function ($w) use ($q, $isNumeric) {
-                if ($isNumeric) {
-                    $w->orWhere('p.IdMergedVisitControl', (int)$q);
-                }
-
-               
-
-                $w->orWhere('m.LastName', 'like', "%{$q}%")
-                  ->orWhere('m.FirstName', 'like', "%{$q}%")
-                  ->orWhere('m.MiddleName', 'like', "%{$q}%")
-                  ->orWhere('m.Department', 'like', "%{$q}%")
-                  ->orWhere('m.Position', 'like', "%{$q}%")
-                  ->orWhere('p.DoorID', 'like', "%{$q}%");
-                  $w->orWhereRaw(
-    "TRIM(CONCAT(COALESCE(m.LastName,''),' ',COALESCE(m.FirstName,''),' ',COALESCE(m.MiddleName,''))) LIKE ?",
-    ["%{$q}%"]
-);
-
-$w->orWhereRaw(
-    "TRIM(CONCAT(COALESCE(m.LastName,''),' ',COALESCE(m.FirstName,''))) LIKE ?",
-    ["%{$q}%"]
-);
-
-            });
+        if (!isset($allowedSort[$sort])) {
+            $sort = 'fio';
         }
 
-        $events = $eventsQ->get();
-        $testId = 614;
+        $filters = [
+            'from'          => $from,
+            'to'            => $to,
+            'q'             => $q,
+            'department'    => $department,
+            'position'      => $position,
+            'break_minutes' => $breakMinutes,
+            'sort'          => $sort,
+            'dir'           => $dir,
+            'applied'       => $applied ? '1' : '0',
+        ];
 
-$ev614 = $events->filter(fn($e) => (int)$e->IdMergedVisitControl === $testId)->values();
+        /** @var LicenseService $license */
+        $license = app(LicenseService::class);
+        $reportAccess = $license->reportAccess();
 
-$departments = DB::table('mergedvisitcontrol')
-    ->whereNotNull('Department')
-    ->where('Department', '<>', '')
-    ->distinct()
-    ->orderBy('Department')
-    ->pluck('Department');
+        $canViewReport = (bool)$reportAccess['allowed_view'];
+        $canDownload   = (bool)$reportAccess['allowed_download'];
+        $licenseBanner = $reportAccess['banner'] ?? ['show' => false];
 
-$positions = DB::table('mergedvisitcontrol')
-    ->whereNotNull('Position')
-    ->where('Position', '<>', '')
-    ->distinct()
-    ->orderBy('Position')
-    ->pluck('Position');
+        if (!$canViewReport) {
+            $rows = new LengthAwarePaginator([], 0, 50, 1, [
+                'path' => $request->url(),
+                'query' => $request->query(),
+            ]);
 
+            return view('passage.index', [
+                'rows' => $rows,
+                'filters' => $filters,
+                'departments' => [],
+                'positions' => [],
+                'licenseBanner' => $licenseBanner,
+                'canViewReport' => $canViewReport,
+                'canDownloadReport' => false,
+            ]);
+        }
 
-// logger()->info('[WORKHOURS] 614 events in query', [
-//     'count' => $ev614->count(),
-//     'min' => $ev614->min('AccessTime'),
-//     'max' => $ev614->max('AccessTime'),
-// ]);
+        $lookupTtl = max(30, (int) config('worktime.lookup_cache_ttl_seconds', 300));
 
-// // покажем первые/последние 5 событий
-// logger()->info('[WORKHOURS] 614 first5', $ev614->sortBy('AccessTime')->take(5)->map(fn($e)=>[$e->AccessTime,$e->AccessType])->values()->all());
-// logger()->info('[WORKHOURS] 614 last5',  $ev614->sortByDesc('AccessTime')->take(5)->map(fn($e)=>[$e->AccessTime,$e->AccessType])->values()->all());
+        $departments = Cache::remember('report.lookup.departments.v1', $lookupTtl, function () {
+            return DB::table('mergedvisitcontrol')
+                ->whereNotNull('Department')
+                ->where('Department', '<>', '')
+                ->distinct()
+                ->orderBy('Department')
+                ->pluck('Department');
+        });
 
-$stat = [];
-foreach ($events as $e) {
-    $id = (int)$e->IdMergedVisitControl;
-    if (!isset($stat[$id])) $stat[$id] = ['in'=>0,'out'=>0];
-    $type = trim((string)$e->AccessType);
-    if ($type === 'Вход')  $stat[$id]['in']++;
-    if ($type === 'Выход') $stat[$id]['out']++;
-}
+        $positions = Cache::remember('report.lookup.positions.v1', $lookupTtl, function () {
+            return DB::table('mergedvisitcontrol')
+                ->whereNotNull('Position')
+                ->where('Position', '<>', '')
+                ->distinct()
+                ->orderBy('Position')
+                ->pluck('Position');
+        });
 
-$onlyIn = 0; $onlyOut = 0; $both = 0;
-foreach ($stat as $s) {
-    if ($s['in'] > 0 && $s['out'] > 0) $both++;
-    elseif ($s['in'] > 0) $onlyIn++;
-    elseif ($s['out'] > 0) $onlyOut++;
-}
+        if (!$applied) {
+            $rows = new LengthAwarePaginator([], 0, 50, 1, [
+                'path' => $request->url(),
+                'query' => $request->query(),
+            ]);
 
-// logger()->info('[WORKHOURS] per-employee direction stat', [
-//     'employees_total' => count($stat),
-//     'both_in_out' => $both,
-//     'only_in' => $onlyIn,
-//     'only_out' => $onlyOut,
-// ]);
+            return view('passage.index', [
+                'rows' => $rows,
+                'filters' => $filters,
+                'departments' => $departments,
+                'positions' => $positions,
+                'licenseBanner' => $licenseBanner,
+                'canViewReport' => $canViewReport,
+                'canDownloadReport' => false,
+            ]);
+        }
 
-        // =========================
-        // Агрегация: часы по людям
-        // =========================
-        $rows = $this->calcWorkedHours($events, $periodFrom, $periodTo, $breakMinutes);
+        $dailyRows = $this->getDailyRowsForPeriod(
+            $qFrom,
+            $qTo,
+            $periodStart,
+            $periodEnd,
+            $department,
+            $position,
+            $q,
+            $breakMinutes
+        );
 
-// logger()->info('[WORKHOURS] first_row', $rows[0] ?? []);
+        $rows = array_map(function (array $row): array {
+            $totalSeconds = array_sum($row['daily_seconds'] ?? []);
 
-        // сортировка
-        usort($rows, function ($a, $b) use ($sort, $dir) {
-            $ka = $a[$sort];
-            $kb = $b[$sort];
+            return [
+                'employee_id' => (int)($row['employee_id'] ?? 0),
+                'fio' => (string)($row['fio'] ?? ''),
+                'department' => (string)($row['department'] ?? ''),
+                'position' => (string)($row['position'] ?? ''),
+                'worked_hours' => round($totalSeconds / 3600, 2),
+            ];
+        }, $dailyRows);
 
-            if ($ka == $kb) return 0;
-            $res = ($ka < $kb) ? -1 : 1;
+        usort($rows, function (array $a, array $b) use ($sort, $dir): int {
+            $ka = $a[$sort] ?? null;
+            $kb = $b[$sort] ?? null;
+
+            if ($ka == $kb) {
+                return 0;
+            }
+
+            if (is_numeric($ka) && is_numeric($kb)) {
+                $res = ((float)$ka <=> (float)$kb);
+            } else {
+                $res = strcmp((string)$ka, (string)$kb);
+            }
+
             return $dir === 'asc' ? $res : -$res;
         });
 
-       // =========================
-// Пагинация массива
-// =========================
-$page    = max(1, (int)$request->query('page', 1));
-$perPage = 50;
+        $page    = max(1, (int)$request->query('page', 1));
+        $perPage = 50;
 
-$total     = count($rows);
-$rowsSlice = array_slice($rows, ($page - 1) * $perPage, $perPage);
+        $total     = count($rows);
+        $rowsSlice = array_slice($rows, ($page - 1) * $perPage, $perPage);
 
-$paginator = new LengthAwarePaginator(
-    $rowsSlice,
-    $total,
-    $perPage,
-    $page,
-    [
-        'path'  => $request->url(),
-        'query' => $request->query(),
-    ]
-);
+        $paginator = new LengthAwarePaginator(
+            $rowsSlice,
+            $total,
+            $perPage,
+            $page,
+            [
+                'path'  => $request->url(),
+                'query' => $request->query(),
+            ]
+        );
 
-return view('passage.index', [
-    'rows'        => $paginator,
-    'departments' => $departments,
-    'positions'   => $positions,
-    'filters'     => $filters,
-    'licenseBanner' => $licenseBanner,
-'canViewReport' => $canViewReport,
-'canDownloadReport' => $canDownload,
-]);
-
-
-
-
-
+        return view('passage.index', [
+            'rows' => $paginator,
+            'departments' => $departments,
+            'positions' => $positions,
+            'filters' => $filters,
+            'licenseBanner' => $licenseBanner,
+            'canViewReport' => $canViewReport,
+            'canDownloadReport' => $canDownload && $applied,
+        ]);
     }
 
 private function calcWorkedHours($events, Carbon $periodFrom, Carbon $periodTo, int $breakMinutes = 20): array
@@ -544,6 +404,172 @@ private function calcWorkedHours($events, Carbon $periodFrom, Carbon $periodTo, 
 
 
 
+private function resolveReportParams(Request $request): array
+{
+    $from = $request->query('from');
+    $to   = $request->query('to');
+    $q    = trim((string)$request->query('q', ''));
+
+    $department = trim((string)$request->query('department', ''));
+    $position   = trim((string)$request->query('position', ''));
+
+    $breakMinutes = (int)$request->query('break_minutes', 20);
+    $breakMinutes = max(0, min(240, $breakMinutes));
+
+    $q = preg_replace('/[\x{00A0}\x{2007}\x{202F}]/u', ' ', $q);
+    $q = preg_replace('/\s+/u', ' ', $q);
+    $q = trim($q);
+
+    if (!$from && !$to) {
+        $from = now()->startOfMonth()->toDateString();
+        $to   = now()->endOfMonth()->toDateString();
+    }
+
+    if ($from && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $from)) $from = null;
+    if ($to   && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $to))   $to   = null;
+
+    $periodStart = $from
+        ? Carbon::parse($from)->startOfDay()
+        : now()->startOfMonth()->startOfDay();
+    $periodEnd = $to
+        ? Carbon::parse($to)->endOfDay()
+        : now()->endOfMonth()->endOfDay();
+
+    if ($periodEnd->lt($periodStart)) {
+        [$periodStart, $periodEnd] = [$periodEnd->copy()->startOfDay(), $periodStart->copy()->endOfDay()];
+    }
+
+    $maxReportDays = max(1, (int) config('worktime.report_max_days', 62));
+    $periodDays = $periodStart->diffInDays($periodEnd) + 1;
+    if ($periodDays > $maxReportDays) {
+        $periodStart = $periodEnd->copy()->subDays($maxReportDays - 1)->startOfDay();
+    }
+
+    return [
+        'from' => $periodStart->toDateString(),
+        'to' => $periodEnd->toDateString(),
+        'q' => $q,
+        'department' => $department !== '' ? $department : null,
+        'position' => $position !== '' ? $position : null,
+        'breakMinutes' => $breakMinutes,
+        'periodStart' => $periodStart,
+        'periodEnd' => $periodEnd,
+        'qFrom' => (clone $periodStart)->subDay(),
+        'qTo' => (clone $periodEnd)->addDay(),
+    ];
+}
+
+private function buildWorktimeEventsQuery(Carbon $qFrom, Carbon $qTo, ?string $department, ?string $position, string $q)
+{
+    $dedup = DB::table('passage')
+        ->selectRaw('MIN(IdPassage) as IdPassage')
+        ->whereBetween('AccessTime', [$qFrom, $qTo])
+        ->whereNotNull('IdMergedVisitControl')
+        ->groupBy('IdMergedVisitControl', 'AccessTime', 'AccessType', 'DoorID');
+
+    $eventsQ = DB::table('passage as p')
+        ->joinSub($dedup, 'd', function ($join) {
+            $join->on('p.IdPassage', '=', 'd.IdPassage');
+        })
+        ->join('mergedvisitcontrol as m', 'm.idmergedvisitcontrol', '=', 'p.IdMergedVisitControl')
+        ->select([
+            'p.IdMergedVisitControl',
+            'p.AccessTime',
+            'p.AccessType',
+            'p.DoorID',
+            'm.LastName',
+            'm.FirstName',
+            'm.MiddleName',
+            'm.Department',
+            'm.Position',
+        ])
+        ->when($department, function ($qq) use ($department) {
+            $qq->where('m.Department', $department);
+        })
+        ->when($position, function ($qq) use ($position) {
+            $qq->where('m.Position', $position);
+        })
+        ->orderBy('p.IdMergedVisitControl')
+        ->orderBy('p.AccessTime');
+
+    if ($q !== '') {
+        $isNumeric = ctype_digit($q);
+
+        $eventsQ->where(function ($w) use ($q, $isNumeric) {
+            if ($isNumeric) {
+                $w->orWhere('p.IdMergedVisitControl', (int)$q);
+            }
+
+            $w->orWhere('m.LastName', 'like', "%{$q}%")
+                ->orWhere('m.FirstName', 'like', "%{$q}%")
+                ->orWhere('m.MiddleName', 'like', "%{$q}%")
+                ->orWhere('m.Department', 'like', "%{$q}%")
+                ->orWhere('m.Position', 'like', "%{$q}%")
+                ->orWhere('p.DoorID', 'like', "%{$q}%");
+
+            $w->orWhereRaw(
+                "TRIM(CONCAT(COALESCE(m.LastName,''),' ',COALESCE(m.FirstName,''),' ',COALESCE(m.MiddleName,''))) LIKE ?",
+                ["%{$q}%"]
+            );
+
+            $w->orWhereRaw(
+                "TRIM(CONCAT(COALESCE(m.LastName,''),' ',COALESCE(m.FirstName,''))) LIKE ?",
+                ["%{$q}%"]
+            );
+        });
+    }
+
+    return $eventsQ;
+}
+
+private function getDailyRowsForPeriod(
+    Carbon $qFrom,
+    Carbon $qTo,
+    Carbon $periodStart,
+    Carbon $periodEnd,
+    ?string $department,
+    ?string $position,
+    string $q,
+    int $breakMinutes
+): array {
+    $ttl = max(30, (int) config('worktime.report_cache_ttl_seconds', 120));
+
+    $cacheKey = $this->reportCacheKey([
+        'from' => $qFrom->toDateTimeString(),
+        'to' => $qTo->toDateTimeString(),
+        'periodStart' => $periodStart->toDateString(),
+        'periodEnd' => $periodEnd->toDateString(),
+        'department' => $department,
+        'position' => $position,
+        'q' => $q,
+        'breakMinutes' => max(0, min(240, $breakMinutes)),
+    ]);
+
+    return Cache::remember($cacheKey, $ttl, function () use (
+        $qFrom,
+        $qTo,
+        $department,
+        $position,
+        $q,
+        $periodStart,
+        $periodEnd,
+        $breakMinutes
+    ) {
+        $events = $this->buildWorktimeEventsQuery($qFrom, $qTo, $department, $position, $q)->get();
+        return $this->calcPeriodDailyRows($events, $periodStart, $periodEnd, $breakMinutes);
+    });
+}
+
+private function reportCacheKey(array $payload): string
+{
+    $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if ($json === false) {
+        $json = serialize($payload);
+    }
+
+    return 'report.daily_rows.v1.' . sha1($json);
+}
+
 private function buildReportQuery(Request $request)
 {
     $from = $request->query('from');
@@ -622,191 +648,234 @@ private function buildReportQuery(Request $request)
 public function export(Request $request)
 {
     $reportAccess = app(\App\Services\LicenseService::class)->reportAccess();
-if (empty($reportAccess['allowed_download'])) {
-    abort(403, 'Report download is blocked by license.');
-}
+    if (empty($reportAccess['allowed_download'])) {
+        abort(403, 'Report download is blocked by license.');
+    }
 
-    // Экспорт может быть тяжёлым по времени/памяти, но тут строк обычно меньше (по людям).
     @ini_set('memory_limit', '512M');
     @set_time_limit(300);
 
-    // =========================
-    // Фильтры (как в index)
-    // =========================
-    $from = $request->query('from');
-    $to   = $request->query('to');
-    $q    = trim((string)$request->query('q', ''));
-    $department = $request->query('department');
-    $position   = $request->query('position');
+    $params = $this->resolveReportParams($request);
+    $q = $params['q'];
+    $department = $params['department'];
+    $position = $params['position'];
+    $breakMinutes = $params['breakMinutes'];
+    $periodStart = $params['periodStart'];
+    $periodEnd = $params['periodEnd'];
+    $qFrom = $params['qFrom'];
+    $qTo = $params['qTo'];
 
-    // нормализация q (как в index)
-    $q = preg_replace('/[\x{00A0}\x{2007}\x{202F}]/u', ' ', $q);
-    $q = preg_replace('/\s+/u', ' ', $q);
-    $q = trim($q);
+    $rows = $this->getDailyRowsForPeriod(
+        $qFrom,
+        $qTo,
+        $periodStart,
+        $periodEnd,
+        $department,
+        $position,
+        $q,
+        $breakMinutes
+    );
 
-    // дефолт: текущий месяц
-    if (!$from && !$to) {
-        $from = now()->startOfMonth()->toDateString();
-        $to   = now()->endOfMonth()->toDateString();
-    }
-
-    // валидация дат
-    if ($from && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $from)) $from = null;
-    if ($to   && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $to))   $to   = null;
-
-    $periodFrom = $from ? Carbon::parse($from)->startOfDay() : now()->subDays(7)->startOfDay();
-    $periodTo   = $to   ? Carbon::parse($to)->endOfDay()     : now()->endOfDay();
-
-    // буфер для смен на границах (как в index)
-    $qFrom = (clone $periodFrom)->subDay();
-    $qTo   = (clone $periodTo)->addDay();
-
-    // =========================
-    // Периметр (как в index)
-    // =========================
-    $perimeter = config('worktime.perimeter', []);
-    $perimeterMatch = $perimeter['match'] ?? 'contains'; // 'exact' | 'contains'
-    $perimeterDoors = $perimeter['doors'] ?? [];
-
-    // =========================
-    // Сортировка (как в index)
-    // =========================
-    $sort = (string)$request->query('sort', 'fio');
-    $dir  = strtolower((string)$request->query('dir', 'asc')) === 'desc' ? 'desc' : 'asc';
-
-    $allowedSort = [
-        'fio'          => 'fio',
-        'id'           => 'employee_id',
-        'department'   => 'department',
-        'position'     => 'position',
-        'worked_hours' => 'worked_hours',
-    ];
-    if (!isset($allowedSort[$sort])) $sort = 'fio';
-
-    // =========================
-    // Дедуп (как в index)
-    // =========================
-    $dedup = DB::table('passage')
-        ->selectRaw('MIN(IdPassage) as IdPassage')
-        ->whereBetween('AccessTime', [$qFrom, $qTo])
-        ->whereNotNull('IdMergedVisitControl')
-        ->when(!empty($perimeterDoors), function ($qq) use ($perimeterDoors, $perimeterMatch) {
-            $qq->where(function ($w) use ($perimeterDoors, $perimeterMatch) {
-                foreach ($perimeterDoors as $d) {
-                    $d = trim((string)$d);
-                    if ($d === '') continue;
-
-                    if ($perimeterMatch === 'exact') {
-                        $w->orWhereRaw('TRIM(DoorID) = ?', [$d]);
-                    } else {
-                        $w->orWhere('DoorID', 'like', '%' . $d . '%');
-                    }
-                }
-            });
-        })
-        ->groupBy('IdMergedVisitControl', 'AccessTime', 'AccessType', 'DoorID');
-
-    // =========================
-    // События + человек (как в index)
-    // =========================
-    $eventsQ = DB::table('passage as p')
-        ->joinSub($dedup, 'd', function ($join) {
-            $join->on('p.IdPassage', '=', 'd.IdPassage');
-        })
-        ->join('mergedvisitcontrol as m', 'm.idmergedvisitcontrol', '=', 'p.IdMergedVisitControl')
-        ->select([
-            'p.IdMergedVisitControl',
-            'p.AccessTime',
-            'p.AccessType',
-            'p.DoorID',
-            'm.LastName',
-            'm.FirstName',
-            'm.MiddleName',
-            'm.Department',
-            'm.Position',
-        ])
-        ->when($department, function ($qq) use ($department) {
-            $qq->where('m.Department', $department);
-        })
-        ->when($position, function ($qq) use ($position) {
-            $qq->where('m.Position', $position);
-        })
-        ->orderBy('p.IdMergedVisitControl')
-        ->orderBy('p.AccessTime');
-
-    // Поиск q (как в index)
-    if ($q !== '') {
-        $isNumeric = ctype_digit($q);
-
-        $eventsQ->where(function ($w) use ($q, $isNumeric) {
-            if ($isNumeric) {
-                $w->orWhere('p.IdMergedVisitControl', (int)$q);
-            }
-
-            $w->orWhere('m.LastName', 'like', "%{$q}%")
-              ->orWhere('m.FirstName', 'like', "%{$q}%")
-              ->orWhere('m.MiddleName', 'like', "%{$q}%")
-              ->orWhere('m.Department', 'like', "%{$q}%")
-              ->orWhere('m.Position', 'like', "%{$q}%")
-              ->orWhere('p.DoorID', 'like', "%{$q}%");
-
-            $w->orWhereRaw(
-                "TRIM(CONCAT(COALESCE(m.LastName,''),' ',COALESCE(m.FirstName,''),' ',COALESCE(m.MiddleName,''))) LIKE ?",
-                ["%{$q}%"]
-            );
-
-            $w->orWhereRaw(
-                "TRIM(CONCAT(COALESCE(m.LastName,''),' ',COALESCE(m.FirstName,''))) LIKE ?",
-                ["%{$q}%"]
-            );
-        });
-    }
-
-    $events = $eventsQ->get();
-
-    // =========================
-    // Агрегация: часы по людям (как в index)
-    // =========================
-    $rows = $this->calcWorkedHours($events, $periodFrom, $periodTo);
-
-    // сортировка (как в index)
-    usort($rows, function ($a, $b) use ($sort, $dir) {
-        $ka = $a[$sort];
-        $kb = $b[$sort];
-
-        if ($ka == $kb) return 0;
-        $res = ($ka < $kb) ? -1 : 1;
-        return $dir === 'asc' ? $res : -$res;
+    usort($rows, function ($a, $b) {
+        return strcmp((string)$a['fio'], (string)$b['fio']);
     });
 
-    // =========================
-    // Excel (вид как на странице)
-    // =========================
+    $dayDates = [];
+    $cursorDay = (clone $periodStart)->startOfDay();
+    $periodEndDay = (clone $periodEnd)->startOfDay();
+    while ($cursorDay->lte($periodEndDay)) {
+        $dayDates[] = $cursorDay->toDateString();
+        $cursorDay->addDay();
+    }
+
+    $daysInPeriod = count($dayDates);
+    $weekRanges = [];
+    $w = 1;
+    for ($startDay = 0; $startDay < $daysInPeriod; $startDay += 7) {
+        $endDay = min($startDay + 6, $daysInPeriod - 1);
+        $weekRanges[] = [
+            'index' => $w,
+            'start' => $startDay,
+            'end' => $endDay,
+        ];
+        $w++;
+    }
+
     $spreadsheet = new Spreadsheet();
     $sheet = $spreadsheet->getActiveSheet();
-    $sheet->setTitle('Проходы сотрудников');
+    $sheet->setTitle('Табель');
 
-    $headers = ['ФИО', 'Завод', 'Подразделение', 'Должность', 'Отработано, ч'];
+    $fixedCols = 3;
+    $weeklyTotalCount = max(0, count($weekRanges) - 1);
+    $totalCols = $fixedCols + $daysInPeriod + $weeklyTotalCount + 1;
+    $lastColLetter = preg_replace('/\d+$/', '', $this->xlCell($totalCols, 1));
 
-    foreach ($headers as $i => $h) {
-        $sheet->setCellValue($this->xlCell($i + 1, 1), $h);
+    $sheet->mergeCells("A1:{$lastColLetter}1");
+    $sheet->setCellValue('A1', 'Отчет по отработанному времени');
+
+    $sheet->mergeCells("A2:{$lastColLetter}2");
+    $sheet->setCellValue(
+        'A2',
+        'Период: ' . $periodStart->format('d.m.Y') . ' - ' . $periodEnd->format('d.m.Y')
+        . ' | Разрешенный перерыв: ' . $breakMinutes . ' мин'
+        . ' | Сформирован: ' . now()->format('d.m.Y H:i')
+    );
+
+    $headerRow = 4;
+    $dataRow = 5;
+
+    $sheet->setCellValue($this->xlCell(1, $headerRow), 'ФИО сотрудника');
+    $sheet->setCellValue($this->xlCell(2, $headerRow), 'Должность');
+    $sheet->setCellValue($this->xlCell(3, $headerRow), 'Подразделение');
+
+    $col = 4;
+    $weekEndToIdx = [];
+    $summaryCols = [];
+    $lastWeekIndex = count($weekRanges);
+    foreach ($weekRanges as $range) {
+        $weekEndToIdx[$range['end']] = $range['index'];
     }
-    $sheet->freezePane('A2');
 
-    $r = 2;
+    for ($day = 0; $day < $daysInPeriod; $day++) {
+        $sheet->setCellValueExplicit(
+            $this->xlCell($col, $headerRow),
+            Carbon::parse($dayDates[$day])->format('j.m'),
+            DataType::TYPE_STRING
+        );
+        $col++;
+
+        if (isset($weekEndToIdx[$day]) && (int)$weekEndToIdx[$day] < $lastWeekIndex) {
+            $sheet->setCellValue($this->xlCell($col, $headerRow), 'Итог нед. ' . $weekEndToIdx[$day]);
+            $summaryCols[] = $col;
+            $col++;
+        }
+    }
+
+    $sheet->setCellValue($this->xlCell($col, $headerRow), 'Итог за период');
+    $summaryCols[] = $col;
+
+    $currentRow = $dataRow;
+
     foreach ($rows as $row) {
-        $sheet->setCellValue($this->xlCell(1, $r), (string)($row['fio'] ?? ''));
-        $sheet->setCellValue($this->xlCell(2, $r), (string)($row['plant'] ?? '—'));
-        $sheet->setCellValue($this->xlCell(3, $r), (string)($row['department'] ?? ''));
-        $sheet->setCellValue($this->xlCell(4, $r), (string)($row['position'] ?? ''));
-        $sheet->setCellValue($this->xlCell(5, $r), (string)($row['worked_hours'] ?? 0));
-        $r++;
+        $dailySeconds = $row['daily_seconds'];
+
+        $sheet->setCellValue($this->xlCell(1, $currentRow), (string)$row['fio']);
+        $sheet->setCellValue($this->xlCell(2, $currentRow), (string)$row['position']);
+        $sheet->setCellValue($this->xlCell(3, $currentRow), (string)$row['department']);
+
+        $col = 4;
+        $monthSeconds = 0;
+        $runningWeekTotalSeconds = 0;
+
+        foreach ($weekRanges as $range) {
+            for ($day = $range['start']; $day <= $range['end']; $day++) {
+                $dayKey = $dayDates[$day];
+                $daySeconds = (int)($dailySeconds[$dayKey] ?? 0);
+                $monthSeconds += $daySeconds;
+
+                $sheet->setCellValue($this->xlCell($col, $currentRow), round($daySeconds / 3600, 2));
+                $col++;
+            }
+
+            if ((int)$range['index'] < $lastWeekIndex) {
+                $weekSeconds = 0;
+                for ($day = $range['start']; $day <= $range['end']; $day++) {
+                    $dayKey = $dayDates[$day];
+                    $weekSeconds += (int)($dailySeconds[$dayKey] ?? 0);
+                }
+
+                $runningWeekTotalSeconds += $weekSeconds;
+                $sheet->setCellValue($this->xlCell($col, $currentRow), round($runningWeekTotalSeconds / 3600, 2));
+                $col++;
+            }
+        }
+
+        $sheet->setCellValue($this->xlCell($col, $currentRow), round($monthSeconds / 3600, 2));
+
+        $currentRow++;
     }
 
-foreach (range('A', 'E') as $col) {
-    $sheet->getColumnDimension($col)->setAutoSize(true);
-}
-    $fileName = 'Отчет отработанное время ' . $periodFrom->format('Y-m-d') . '_' . $periodTo->format('Y-m-d') . '.xlsx';
+    if (empty($rows)) {
+        $sheet->mergeCells("A{$dataRow}:{$lastColLetter}{$dataRow}");
+        $sheet->setCellValue("A{$dataRow}", 'Нет данных за выбранный период.');
+    }
+
+    $sheet->getStyle("A1:A2")->getFont()->setBold(true)->setSize(12);
+    $sheet->getStyle("A1:{$lastColLetter}2")
+        ->getAlignment()
+        ->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER)
+        ->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER);
+
+    $sheet->getStyle("A{$headerRow}:{$lastColLetter}{$headerRow}")->getFont()->setBold(true);
+    $sheet->getStyle("A{$headerRow}:{$lastColLetter}{$headerRow}")
+        ->getAlignment()
+        ->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER)
+        ->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER);
+
+    $sheet->getColumnDimension('A')->setWidth(38);
+    $sheet->getColumnDimension('B')->setWidth(28);
+    $sheet->getColumnDimension('C')->setWidth(30);
+    for ($i = 4; $i <= $totalCols; $i++) {
+        $colLetter = preg_replace('/\d+$/', '', $this->xlCell($i, 1));
+        if (in_array($i, $summaryCols, true)) {
+            $sheet->getColumnDimension($colLetter)->setWidth(13);
+        } else {
+            $sheet->getColumnDimension($colLetter)->setWidth(8);
+        }
+    }
+
+    $lastDataRow = !empty($rows) ? ($currentRow - 1) : $dataRow;
+    $sheet->freezePane('D5');
+    $sheet->setAutoFilter("A{$headerRow}:{$lastColLetter}{$lastDataRow}");
+
+    $sheet->getStyle("A1:{$lastColLetter}{$lastDataRow}")
+        ->getAlignment()
+        ->setWrapText(true);
+
+    if (!empty($rows)) {
+        for ($r = $dataRow; $r <= $lastDataRow; $r++) {
+            if ((($r - $dataRow) % 2) === 1) {
+                $sheet->getStyle("A{$r}:{$lastColLetter}{$r}")
+                    ->getFill()
+                    ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+                    ->getStartColor()
+                    ->setARGB('FFE8F5E9');
+            }
+        }
+    }
+
+    foreach ($summaryCols as $summaryCol) {
+        $summaryColLetter = preg_replace('/\d+$/', '', $this->xlCell($summaryCol, 1));
+        $sheet->getStyle("{$summaryColLetter}{$headerRow}:{$summaryColLetter}{$lastDataRow}")
+            ->getFill()
+            ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+            ->getStartColor()
+            ->setARGB('FFE5E7EB');
+
+        $sheet->getStyle("{$summaryColLetter}{$headerRow}:{$summaryColLetter}{$lastDataRow}")
+            ->getBorders()
+            ->getAllBorders()
+            ->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN)
+            ->getColor()
+            ->setARGB('FF9CA3AF');
+    }
+
+    $sheet->getStyle("A1:{$lastColLetter}{$lastDataRow}")
+        ->getBorders()
+        ->getAllBorders()
+        ->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN)
+        ->getColor()
+        ->setARGB('FF9CA3AF');
+
+    $sheet->getStyle($this->xlCell(4, $dataRow) . ':' . $this->xlCell($totalCols, $lastDataRow))
+        ->getNumberFormat()
+        ->setFormatCode('0.00');
+
+    $fileName = 'Отчет по отработанному времени за '
+        . $periodStart->format('d.m.Y')
+        . '_'
+        . $periodEnd->format('d.m.Y')
+        . '.xlsx';
 
     return new StreamedResponse(function () use ($spreadsheet) {
         $writer = new Xlsx($spreadsheet);
@@ -816,6 +885,254 @@ foreach (range('A', 'E') as $col) {
         'Content-Disposition' => "attachment; filename=\"{$fileName}\"",
         'Cache-Control'       => 'max-age=0',
     ]);
+}
+
+private function calcPeriodDailyRows(Collection $events, Carbon $periodStart, Carbon $periodEnd, int $allowedBreakMinutes): array
+{
+    $periodStartTs = (clone $periodStart)->startOfDay()->getTimestamp();
+    $periodEndExclusiveTs = (clone $periodEnd)->addDay()->startOfDay()->getTimestamp();
+
+    $dayKeys = [];
+    $dayCursor = (clone $periodStart)->startOfDay();
+    $periodEndDay = (clone $periodEnd)->startOfDay();
+    while ($dayCursor->lte($periodEndDay)) {
+        $dayKeys[] = $dayCursor->toDateString();
+        $dayCursor->addDay();
+    }
+
+    $allowedBreakSec = max(0, min(240, $allowedBreakMinutes)) * 60;
+    $shiftBreakSec = 2 * 3600;
+    $maxShiftSec = 24 * 3600;
+    $dupResetSec = max(0, (int)config('worktime.dup_in_reset_minutes', 15)) * 60;
+
+    $grouped = [];
+    foreach ($events as $e) {
+        $employeeId = (int)($e->IdMergedVisitControl ?? 0);
+        if ($employeeId <= 0) continue;
+
+        if (!isset($grouped[$employeeId])) {
+            $fio = trim(
+                ((string)($e->LastName ?? '')) . ' ' .
+                ((string)($e->FirstName ?? '')) . ' ' .
+                ((string)($e->MiddleName ?? ''))
+            );
+
+            $grouped[$employeeId] = [
+                'employee_id' => $employeeId,
+                'fio' => $fio,
+                'position' => (string)($e->Position ?? ''),
+                'department' => (string)($e->Department ?? ''),
+                'events' => [],
+            ];
+        }
+
+        $grouped[$employeeId]['events'][] = $e;
+    }
+
+    $result = [];
+
+    foreach ($grouped as $employeeId => $person) {
+        $eventsList = $person['events'];
+        usort($eventsList, fn($a, $b) => strcmp((string)$a->AccessTime, (string)$b->AccessTime));
+
+        $segments = [];
+        $openInTs = null;
+        $lastOutTs = null;
+
+        foreach ($eventsList as $ev) {
+            $normalizedType = $this->normalizeAccessType((string)($ev->AccessType ?? ''));
+            if ($normalizedType === null) continue;
+
+            try {
+                $ts = Carbon::parse($ev->AccessTime)->getTimestamp();
+            } catch (\Throwable $ex) {
+                continue;
+            }
+
+            if ($normalizedType === 'in') {
+                // дубль входа: первый вход держим, но при длинном разрыве перезаписываем более поздним
+                if ($openInTs === null) {
+                    $openInTs = $ts;
+                } elseif ($dupResetSec > 0 && ($ts - $openInTs) >= $dupResetSec) {
+                    $openInTs = $ts;
+                }
+                continue;
+            }
+
+            // normalizedType === 'out'
+            // дубль выхода подряд без нового входа — игнорируем
+            if ($openInTs === null) {
+                $lastOutTs = $ts;
+                continue;
+            }
+
+            if ($ts <= $openInTs) {
+                $openInTs = null;
+                $lastOutTs = $ts;
+                continue;
+            }
+
+            $dur = $ts - $openInTs;
+            if ($dur <= $maxShiftSec) {
+                $segments[] = [$openInTs, $ts];
+            }
+
+            $openInTs = null;
+            $lastOutTs = $ts;
+        }
+
+        $dailySeconds = [];
+        foreach ($dayKeys as $key) {
+            $dailySeconds[$key] = 0;
+        }
+
+        if (!empty($segments)) {
+            usort($segments, fn($a, $b) => $a[0] <=> $b[0]);
+
+            $flushShift = function (array $shiftSegments) use (
+                &$dailySeconds,
+                $allowedBreakSec,
+                $maxShiftSec,
+                $periodStartTs,
+                $periodEndExclusiveTs
+            ) {
+                if (empty($shiftSegments)) return;
+
+                $shiftStart = (int)$shiftSegments[0][0];
+                $shiftCapEnd = $shiftStart + $maxShiftSec;
+
+                $count = count($shiftSegments);
+                for ($i = 0; $i < $count; $i++) {
+                    $segStart = (int)$shiftSegments[$i][0];
+                    $segEnd = (int)$shiftSegments[$i][1];
+
+                    $segEnd = min($segEnd, $shiftCapEnd);
+                    $this->addIntervalToDailyByDate(
+                        $dailySeconds,
+                        $segStart,
+                        $segEnd,
+                        $periodStartTs,
+                        $periodEndExclusiveTs
+                    );
+
+                    if ($i < $count - 1 && $allowedBreakSec > 0) {
+                        $gapStart = $segEnd;
+                        $nextStart = (int)$shiftSegments[$i + 1][0];
+                        $gap = $nextStart - $gapStart;
+
+                        if ($gap > 0) {
+                            $allowedPart = min($gap, $allowedBreakSec);
+                            $breakEnd = min($gapStart + $allowedPart, $shiftCapEnd);
+                            $this->addIntervalToDailyByDate(
+                                $dailySeconds,
+                                $gapStart,
+                                $breakEnd,
+                                $periodStartTs,
+                                $periodEndExclusiveTs
+                            );
+                        }
+                    }
+                }
+            };
+
+            $shiftSegments = [];
+            $prevOut = null;
+            foreach ($segments as $segment) {
+                [$segStart, $segEnd] = $segment;
+
+                if (empty($shiftSegments)) {
+                    $shiftSegments[] = [$segStart, $segEnd];
+                    $prevOut = $segEnd;
+                    continue;
+                }
+
+                $gap = $segStart - $prevOut;
+                if ($gap > $shiftBreakSec) {
+                    $flushShift($shiftSegments);
+                    $shiftSegments = [[$segStart, $segEnd]];
+                } else {
+                    $shiftSegments[] = [$segStart, $segEnd];
+                }
+                $prevOut = $segEnd;
+            }
+
+            $flushShift($shiftSegments);
+        }
+
+        $result[] = [
+            'employee_id' => (int)$employeeId,
+            'fio' => $person['fio'],
+            'position' => $person['position'],
+            'department' => $person['department'],
+            'daily_seconds' => $dailySeconds,
+        ];
+    }
+
+    return $result;
+}
+
+private function normalizeAccessType(string $rawType): ?string
+{
+    $type = mb_strtolower(trim($rawType), 'UTF-8');
+
+    if (in_array($type, ['вход', 'in', 'enter', 'entry'], true)) {
+        return 'in';
+    }
+    if (in_array($type, ['выход', 'out', 'exit'], true)) {
+        return 'out';
+    }
+
+    return null;
+}
+
+private function addIntervalToDaily(
+    array &$dailySeconds,
+    int $startTs,
+    int $endTs,
+    int $monthStartTs,
+    int $monthEndExclusiveTs
+): void {
+    $start = max($startTs, $monthStartTs);
+    $end = min($endTs, $monthEndExclusiveTs);
+
+    if ($end <= $start) return;
+
+    $cursor = $start;
+    while ($cursor < $end) {
+        $dayStart = Carbon::createFromTimestamp($cursor)->startOfDay()->getTimestamp();
+        $nextDay = $dayStart + 86400;
+        $partEnd = min($end, $nextDay);
+
+        $day = (int)Carbon::createFromTimestamp($cursor)->day;
+        $dailySeconds[$day] = (int)($dailySeconds[$day] ?? 0) + ($partEnd - $cursor);
+
+        $cursor = $partEnd;
+    }
+}
+
+private function addIntervalToDailyByDate(
+    array &$dailySeconds,
+    int $startTs,
+    int $endTs,
+    int $periodStartTs,
+    int $periodEndExclusiveTs
+): void {
+    $start = max($startTs, $periodStartTs);
+    $end = min($endTs, $periodEndExclusiveTs);
+
+    if ($end <= $start) return;
+
+    $cursor = $start;
+    while ($cursor < $end) {
+        $dayStart = Carbon::createFromTimestamp($cursor)->startOfDay()->getTimestamp();
+        $nextDay = $dayStart + 86400;
+        $partEnd = min($end, $nextDay);
+
+        $dayKey = Carbon::createFromTimestamp($cursor)->toDateString();
+        $dailySeconds[$dayKey] = (int)($dailySeconds[$dayKey] ?? 0) + ($partEnd - $cursor);
+
+        $cursor = $partEnd;
+    }
 }
 
 private function buildReportRowsQuery(Request $request)

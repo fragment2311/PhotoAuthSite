@@ -4,12 +4,62 @@ services:
       context: .
       dockerfile: Dockerfile
     image: ${DH_USER:-fragment213}/${APP_REPO:-photoauthapp}:${APP_TAG:-prod}
+    container_name: viewentrance-app
     ports:
-      - "27017:27017"
-    env_file: .env
+      - "${APP_PORT:-27020}:27017"
+    env_file:
+      - ${APP_ENV_FILE:-.env}
+    environment:
+      UPDATE_AGENT_URL: ${UPDATE_AGENT_URL:-http://updater:19100}
+      UPDATE_AGENT_TOKEN: ${UPDATE_AGENT_TOKEN:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - app_storage:/var/www/html/storage
+      - app_bootstrap_cache:/var/www/html/bootstrap/cache
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:27017/login >/dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
+
+  updater:
+    profiles: ["updates"]
+    build:
+      context: ./update-agent
+      dockerfile: Dockerfile
+    environment:
+      PHOTOAUTHAPP_DIR: /workspace
+      UPDATE_AGENT_TOKEN: ${UPDATE_AGENT_TOKEN:-}
+      UPDATE_BRANCH: main
+    volumes:
+      - .:/workspace
+      - /var/run/docker.sock:/var/run/docker.sock
+      - update_agent_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:19100/health', timeout=2)"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  redis:
+    image: redis:7-alpine
+    container_name: viewentrance-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - redis_data:/data
+
+volumes:
+  app_storage:
+  app_bootstrap_cache:
+  redis_data:
+  update_agent_data:

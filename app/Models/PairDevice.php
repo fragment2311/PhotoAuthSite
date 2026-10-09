@@ -16,9 +16,6 @@ class PairDevice extends Model
     protected $fillable = [
         'Name',
         'Location',
-        'Controller_id',
-        'Entry_camera_id',
-        'Exit_camera_id',
         'Comment',
         'IsActive',
         'Last_modified_at',
@@ -67,19 +64,15 @@ class PairDevice extends Model
         return $this->belongsTo(Location::class, 'Location', 'IdLocation');
     }
 
-    // Связи
-    public function controller()
+    public function activeMembers()
     {
-        return $this->belongsTo(ControllerDevice::class, 'Controller_id');
+        return $this->members()->where('IsActive', 1);
     }
 
-    public function entryCamera()
+    public function members()
     {
-        return $this->belongsTo(Camera::class, 'Entry_camera_id');
-    }
-
-    public function exitCamera()
-    {
-        return $this->belongsTo(Camera::class, 'Exit_camera_id');
+        return $this->hasMany(PairDeviceMember::class, 'IdPairDevice', 'Id')
+            ->orderBy('SortOrder')
+            ->orderBy('Id');
     }
 }

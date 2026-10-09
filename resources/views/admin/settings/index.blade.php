@@ -128,6 +128,20 @@
 
     .divider{ height:1px; background:#e5e7eb; margin:1.2rem 0; }
 
+    .update-card{margin-bottom:1rem}
+    #photoauth-updates [hidden]{display:none !important}
+    #photoauth-updates .settings-btn{min-height:44px;margin:0}
+    #photoauth-updates .update-cancel{
+      min-height:44px;padding:.55rem .75rem;border:0;background:transparent;
+      color:#4b5563;font:inherit;text-decoration:underline;cursor:pointer;
+    }
+    #photoauth-updates .update-cancel:hover{color:#111827}
+    #photoauth-updates .update-cancel:focus-visible{outline:2px solid #2563eb;outline-offset:2px;border-radius:4px}
+    .update-status{margin:.35rem 0 .75rem;color:#4b5563}
+    .update-list{margin:.45rem 0 .8rem 1.25rem;padding:0}
+    .update-warning{padding:.75rem 1rem;border:1px solid #f0c36d;border-radius:8px;background:#fff8e5;color:#713f12;margin:.75rem 0}
+    .update-log{white-space:pre-wrap;max-height:260px;overflow:auto;background:#111827;color:#e5e7eb;padding:.75rem;border-radius:8px;font-size:.85rem}
+
     /* КНОПКИ СТРАНИЦЫ НАСТРОЕК (чтобы не ломать .btn из шапки/Bootstrap) */
     .settings-btn{
       display:inline-flex;
@@ -278,6 +292,10 @@
       $remainPillClass = $isGrace ? 'pill-warn' : '';
     @endphp
 
+    @if(!($setupMode ?? false))
+      @include('admin.settings._updates')
+    @endif
+
     <div class="settings-card">
       <h2>Лицензия</h2>
 
@@ -345,6 +363,22 @@
       <form method="POST" action="{{ ($setupMode ?? false) ? route('setup.settings.save') : route('admin.settings.save') }}" enctype="multipart/form-data">
         @csrf
 
+        <h2>Лицензия (client_id)</h2>
+        <div class="row">
+          <div class="field" style="min-width:420px;">
+            <label for="license_client_id">Ожидаемый client_id лицензии</label>
+            <input
+              id="license_client_id"
+              name="license_client_id"
+              value="{{ $s['license_client_id'] ?? config('license.client_id', '') }}"
+              placeholder="Напр.: my-company-branch-01"
+            >
+            <div class="help">
+              Укажите <b>client_id</b> из лицензии (это может быть ИНН или название компании).
+            </div>
+          </div>
+        </div>
+
         <h2>База данных</h2>
         <div class="row">
           <div class="field">
@@ -375,6 +409,11 @@
 
         <h2>Доступ к первичной настройке</h2>
         <div class="row">
+          <div class="field" style="min-width:320px;">
+            <label for="setup_master_login">Мастер-логин</label>
+            <input id="setup_master_login" name="setup_master_login" value="{{ $s['setup_master_login'] ?? 'MASTER' }}" placeholder="Напр.: MASTER">
+          </div>
+
           <div class="field" style="min-width:320px;">
             <label for="setup_master_password">Мастер-пароль</label>
             <input id="setup_master_password" type="password" name="setup_master_password" placeholder="Оставьте пустым, чтобы не менять">
@@ -537,19 +576,15 @@
           </div>
         </div>
 
-        <div class="row" style="margin-top:1rem;">
+        <div class="row" style="margin-top:.5rem;">
           <div class="field" style="min-width:420px;">
-            <label for="allow_error_reports" style="display:flex; align-items:center; gap:.6rem; cursor:pointer;">
-              <input
-                id="allow_error_reports"
-                name="allow_error_reports"
-                type="checkbox"
-                value="1"
-                style="width:auto;"
-                @checked((string)($s['allow_error_reports'] ?? '0') === '1')
-              >
-              <span>Разрешить отправку отчётов об ошибках</span>
-            </label>
+            <a
+              href="{{ route('admin.settings.licenseLog.download') }}"
+              class="settings-btn settings-btn-secondary"
+              style="margin-top:0;"
+            >
+              Скачать лог лицензии
+            </a>
           </div>
         </div>
 

@@ -4,6 +4,8 @@ namespace App\Services;
 
 class BootstrapConfigService
 {
+    private const DEFAULT_MASTER_LOGIN = 'MASTER';
+
     public function __construct(private readonly AppSettingsFileStore $store)
     {
     }
@@ -31,9 +33,9 @@ class BootstrapConfigService
             }
         }
 
-        $apiToken = trim((string) env('DEVICE_PAIRS_API_TOKEN', ''));
+        $apiToken = trim((string) env('API_TOKEN', ''));
         if ($apiToken === '') {
-            $missing[] = 'DEVICE_PAIRS_API_TOKEN';
+            $missing[] = 'API_TOKEN';
         }
 
         return $missing;
@@ -83,6 +85,36 @@ class BootstrapConfigService
         return $hash !== '';
     }
 
+    public function getMasterLogin(): string
+    {
+        $settings = $this->store->loadDecrypted();
+        $login = trim((string) ($settings['setup_master_login'] ?? ''));
+
+        if ($login === '') {
+            return self::DEFAULT_MASTER_LOGIN;
+        }
+
+        return $login;
+    }
+
+    public function isMasterLogin(?string $login): bool
+    {
+        $rawLogin = trim((string) $login);
+        if ($rawLogin === '') {
+            // Обратная совместимость: мастер-пароль без логина.
+            return true;
+        }
+
+        $provided = mb_strtolower($rawLogin);
+        $expected = mb_strtolower($this->getMasterLogin());
+
+        if ($expected === '') {
+            return false;
+        }
+
+        return hash_equals($expected, $provided);
+    }
+
     public function verifyMasterPassword(?string $password): bool
     {
         $password = (string) $password;
@@ -97,6 +129,15 @@ class BootstrapConfigService
         }
 
         return password_verify($password, $hash);
+    }
+
+    public function verifyMasterCredentials(?string $login, ?string $password): bool
+    {
+        if (!$this->isMasterLogin($login)) {
+            return false;
+        }
+
+        return $this->verifyMasterPassword($password);
     }
 }
 

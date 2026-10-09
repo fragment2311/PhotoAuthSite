@@ -157,16 +157,15 @@
     <div class="table-wrap">
       <table>
         <thead>
-          <tr>
-            <th>ID</th>
-            <th>IP</th>
-            <th>Порт</th>
-            <th>Логин</th>
-            <th>Локация</th>
-            <th>Обновлён</th>
-            <th>Активен</th>
-            <th>Действия</th>
-          </tr>
+              <tr>
+                <th>ID</th>
+                <th>IP</th>
+                <th>Порт</th>
+                <th>Логин</th>
+                <th>Обновлён</th>
+                <th>Активен</th>
+                <th>Действия</th>
+              </tr>
         </thead>
         <tbody>
         @foreach($controllers as $c)
@@ -175,7 +174,6 @@
             <td>{{ $c->ip ?? $c->ip_address ?? '—' }}</td>
             <td>{{ $c->port ?? '—' }}</td>
             <td>{{ $c->login ?? '—' }}</td>
-            <td>{{ $c->location ?? '—' }}</td>
             <td>{{ \Illuminate\Support\Str::of($c->last_modified_at)->substr(0, 19) }}</td>
 
              <td>
@@ -229,7 +227,6 @@
                 <th>Порт</th>
                 <th>Направление</th>
                 <th>Логин</th>
-                <th>Локация</th>
                 <th>Обновлён</th>
                 <th>Активна</th>
                 <th>Действия</th>
@@ -243,7 +240,6 @@
                 <td>{{ $cam->port ?? '—' }}</td>
                 <td>{{ $cam->direction_ru ?? '—' }}</td>
                 <td>{{ $cam->login ?? '—' }}</td>
-                <td>{{ $cam->location ?? '—' }}</td>
                 {{-- Обновлён --}}
                 <td>{{ \Illuminate\Support\Str::of($cam->last_modified_at)->substr(0, 19) }}</td>
                 {{-- Активна --}}
@@ -296,9 +292,10 @@
           <tr>
             <th>ID</th>
             <th>Название</th>
+            <th>Локация</th>
             <th>Контроллер (IP)</th>
-            <th>Камера вход (IP)</th>
-            <th>Камера выход (IP)</th>
+            <th>Камеры (IP)</th>
+            <th>Комментарий</th>
             <th>Обновлён</th>
             <th>Активна</th>
             <th>Действия</th>
@@ -309,37 +306,32 @@
         @foreach($pairs as $p)
           @php
             $ctrl = $p->controller;
-            $camE = $p->entryCamera;
-            $camX = $p->exitCamera;
+            $cameras = collect([$p->entryCamera, $p->exitCamera])->filter();
             $pairId = $p->Id ?? $p->id; // страховка, если accessor id есть
           @endphp
 
           <tr>
             <td>{{ $pairId }}</td>
             <td>{{ $p->Name }}</td>
+            <td>{{ $p->locationRef?->LocationName ?? '—' }}</td>
             <td>{{ $ctrl?->ip ?? $ctrl?->ip_address ?? '—' }}</td>
 
             <td>
-              @if($camE)
-                {{ $camE->ip ?? $camE->ip_address ?? '—' }}
-                @if(!empty($camE->direction_ru))
-                  <span class="badge">{{ $camE->direction_ru }}</span>
-                @endif
+              @if($cameras->isNotEmpty())
+                @foreach($cameras as $cam)
+                  <div>
+                    {{ $cam->ip ?? $cam->ip_address ?? '—' }}
+                    @if(!empty($cam->direction_ru))
+                      <span class="badge">{{ $cam->direction_ru }}</span>
+                    @endif
+                  </div>
+                @endforeach
               @else
                 —
               @endif
             </td>
 
-            <td>
-              @if($camX)
-                {{ $camX->ip ?? $camX->ip_address ?? '—' }}
-                @if(!empty($camX->direction_ru))
-                  <span class="badge">{{ $camX->direction_ru }}</span>
-                @endif
-              @else
-                —
-              @endif
-            </td>
+            <td>{{ $p->Comment ?? '—' }}</td>
 
             <td>{{ \Illuminate\Support\Str::of($p->Last_modified_at ?? $p->Updated_at)->substr(0, 19) }}</td>
 

@@ -10,7 +10,31 @@ services:
       - "27017:27017"        # 27017 снаружи → 27017 в контейнере
     env_file:
       - .env               # APP_URL=http://localhost:27017 рекомендовано
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - app_storage:/var/www/html/storage
+      - app_bootstrap_cache:/var/www/html/bootstrap/cache
     restart: unless-stopped
     # в DEV можно монтировать код, но следи за структурой public/
     # volumes:
     #   - .:/var/www/html
+
+  redis:
+    image: redis:7-alpine
+    container_name: viewentrance-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - redis_data:/data
+
+volumes:
+  app_storage:
+  app_bootstrap_cache:
+  redis_data:

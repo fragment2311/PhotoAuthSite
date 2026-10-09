@@ -15,6 +15,11 @@ class Location extends Model
 
     protected $fillable = [
         'LocationName',
+        'LocationDate',
+    ];
+
+    protected $casts = [
+        'LocationDate' => 'date',
     ];
 }
 

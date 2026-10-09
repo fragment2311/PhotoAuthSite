@@ -8,4 +8,6 @@ return [
     'passive'  => (bool) env('FTP_PASSIVE', true),
     'ssl'      => (bool) env('FTP_SSL', true),
     'timeout'  => (int) env('FTP_TIMEOUT', 30),
+    // Публичный HTTP(S)-адрес файлов, если он отличается от FTP_HOST.
+    'public_http_base' => env('PHOTO_PUBLIC_HTTP_BASE', env('PHOTOS_HTTP_BASE', '')),
 ];

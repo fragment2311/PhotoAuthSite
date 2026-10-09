@@ -2,6 +2,8 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\ErrorNotificationService;
+use App\Support\ApiErrorFormatter;
 use Closure;
 use Illuminate\Http\Request;
 
@@ -9,16 +11,28 @@ class ApiTokenAuth
 {
     public function handle(Request $request, Closure $next)
     {
-        $expected = env('DEVICE_PAIRS_API_TOKEN');
+        $expected = (string) env('API_TOKEN', '');
 
-        if (!$expected) {
-            return response()->json(['error' => 'API token not configured'], 500);
+        if ($expected === '') {
+            return $this->deny(
+                $request,
+                500,
+                'api_token_not_configured',
+                'API token not configured',
+                'critical'
+            );
         }
 
         $provided = $request->header('X-Api-Token');
 
         if (!is_string($provided) || !hash_equals($expected, $provided)) {
-            return response()->json(['error' => 'Unauthorized'], 401);
+            return $this->deny(
+                $request,
+                401,
+                'unauthorized',
+                'Unauthorized',
+                'warning'
+            );
         }
 
         // (Опционально) ограничение по IP, если нужно:
@@ -26,12 +40,40 @@ class ApiTokenAuth
         $allow = env('DEVICE_PAIRS_API_IP_ALLOWLIST');
         if ($allow) {
             $allowed = array_filter(array_map('trim', explode(',', $allow)));
-            $ip = $request->ip();
+            $ip = ApiErrorFormatter::resolveClientIp($request) ?? $request->ip();
             if ($ip && !in_array($ip, $allowed, true)) {
-                return response()->json(['error' => 'Forbidden'], 403);
+                return $this->deny(
+                    $request,
+                    403,
+                    'forbidden',
+                    'Forbidden',
+                    'warning'
+                );
             }
         }
 
         return $next($request);
+    }
+
+    private function deny(Request $request, int $status, string $code, string $message, string $level)
+    {
+        $clientIp = ApiErrorFormatter::resolveClientIp($request) ?? $request->ip();
+
+        try {
+            app(ErrorNotificationService::class)->log($level, 'API access denied', [
+                'reason' => $code,
+                'status' => $status,
+                'request_id' => ApiErrorFormatter::resolveRequestId($request),
+                'request_method' => $request->method(),
+                'request_path' => $request->path(),
+                'request_url' => $request->fullUrl(),
+                'request_ip' => $clientIp,
+                'request_user_agent' => (string) $request->userAgent(),
+            ]);
+        } catch (\Throwable) {
+            // never block API response due to logging failure
+        }
+
+        return ApiErrorFormatter::response($request, $status, $code, $message);
     }
 }

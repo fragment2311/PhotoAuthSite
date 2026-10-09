@@ -6,6 +6,9 @@ use Illuminate\Database\Eloquent\Model;
 class ControllerDevice extends Model
 {
     protected $table = 'controllers';
+    protected $primaryKey = 'Id';
+    public $incrementing = true;
+    protected $keyType = 'int';
     public $timestamps = false;
 
     protected $fillable = [
@@ -71,6 +74,23 @@ class ControllerDevice extends Model
     // Связь с парами
     public function devicePairs()
     {
-        return $this->hasMany(PairDevice::class, 'Controller_id');
+        return $this->hasManyThrough(
+            PairDevice::class,
+            PairDeviceMember::class,
+            'IdController',
+            'Id',
+            'Id',
+            'IdPairDevice'
+        );
+    }
+
+    public function pairMembers()
+    {
+        return $this->hasMany(PairDeviceMember::class, 'IdController', 'Id');
+    }
+
+    public function pairedWith()
+    {
+        return $this->devicePairs();
     }
 }

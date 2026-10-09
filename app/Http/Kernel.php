@@ -65,5 +65,7 @@ class Kernel extends HttpKernel
 'role' => \App\Http\Middleware\RoleMiddleware::class,
 'device.api' => \App\Http\Middleware\CheckDeviceApiToken::class,
 'api.token' => \App\Http\Middleware\ApiTokenAuth::class,
+'request.id' => \App\Http\Middleware\RequestCorrelationId::class,
+'api.audit' => \App\Http\Middleware\ApiAuditLogMiddleware::class,
     ];
 }

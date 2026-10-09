@@ -60,8 +60,8 @@ input[type="checkbox"] {
     margin-right: 10px;
 }
 
-/* Кнопка */
-button {
+/* Кнопка отправки формы */
+.main-submit-btn {
     width: 100%;
     padding: 12px;
     background-color: var(--primary-bg);
@@ -74,13 +74,13 @@ button {
 }
 
 /* Наведение на кнопку */
-button:hover {
+.main-submit-btn:hover {
     background-color: var(--link-hover);
 }
 
 /* Стилизация контейнера для элементов формы */
 .form-group {
-    margin-bottom: 20px;
+    margin-bottom: 5px;
 }
 
 /* Отступы и выравнивание для меток */
@@ -102,38 +102,6 @@ label {
       color: var(--text);
     }
 
-    header {
-      background: white;
-      padding: 1rem 2rem;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-      z-index: 1000;
-    }
-
-    header h1 { font-size: 2rem; margin: 0; }
-
-    header .btn-group { display: flex; gap: 1rem; }
-
-    header .btn {
-      display: inline-block;
-      padding: 0.7rem 1.4rem;
-      font-size: 1.1rem;
-      border-radius: 6px;
-      text-decoration: none;
-      color: white;
-      border: 2px solid transparent;
-      cursor: pointer;
-      transition: .2s;
-    }
-
-    .btn-primary { background: var(--primary-bg); border-color: var(--primary-bg); }
-    .btn-primary:hover { background: var(--link-hover); }
-
-    .btn-danger { background: var(--danger-bg); border-color: var(--danger-bg); }
-    .btn-danger:hover { background: #b91c1c; }
-
     .wrap {
       max-width: 1100px;
       margin: 20px auto 40px;
@@ -146,6 +114,7 @@ label {
       padding: 24px 24px 20px;
       margin-bottom: 24px;
       box-shadow: 0 2px 6px rgba(0,0,0,.04);
+      position: relative;
     }
 
     .card h2 { font-size: 20px; margin: 0 0 12px; }
@@ -263,36 +232,28 @@ label {
 
     .btn-secondary-small:hover { background: #d1d5db; }
 
+    .last-change-inline {
+      margin-top: 0;
+      margin-bottom: 10px;
+      font-size: 13px;
+      color: #4b5563;
+      text-align: right;
+      line-height: 1.35;
+    }
+
     @media (max-width: 640px) {
       .form-row-inline { flex-direction: column; }
-      header { flex-direction: column; align-items: flex-start; gap: 0.75rem; }
-      header .btn-group { flex-wrap: wrap; }
+      .last-change-inline { text-align: left; }
     }
   </style>
+  <link rel="stylesheet" href="{{ asset('css/header-buttons.css') }}">
 </head>
 <body>
   @php
     $galleryRootDir = trim((string) config('app.gallery_root_dir', config('app.gallery_root_dir_default', '')), '/');
   @endphp
 
-  <header>
-    <h1>
-      <a href="{{ route('gallery',['dir'=>$galleryRootDir]) }}"
-         style="text-decoration:none;color:inherit;">
-        Галерея-Устройства
-      </a>
-    </h1>
-    <div class="btn-group">
-      <a href="{{ route('gallery', ['dir' => $galleryRootDir]) }}" class="btn btn-primary">В галерею</a>
-      <a href="{{ route('admin.devices.index') }}" class="btn btn-primary">Устройства</a>
-      <a href="{{ route('admin.users') }}" class="btn btn-primary">Список пользователей</a>
-      <a href="{{ route('admin.register') }}" class="btn btn-primary">Новый пользователь</a>
-      <form method="POST" action="{{ route('logout') }}" style="display:inline">
-        @csrf
-        <button type="submit" class="btn btn-danger">Выйти</button>
-      </form>
-    </div>
-  </header>
+  @include('layouts.header', ['headerTitle' => 'Галерея-Устройства'])
 
   @php
       /** @var \App\Models\ControllerDevice|\App\Models\Camera|null $device */
@@ -330,6 +291,7 @@ label {
         <h2>{{ $pageTitle }}</h2>
 
         <form method="POST"
+              novalidate
               action="{{ isset($device)
                     ? route('admin.devices.update', ['type' => $type, 'id' => $device->id])
                     : route('admin.devices.store') }}">
@@ -386,12 +348,6 @@ label {
                 <input type="password" id="Password" name="Password" maxlength="255">
             </div>
 
-            <div class="form-group">
-                <label for="Location">Расположение</label>
-                <input type="text" id="Location" name="Location"
-                       value="{{ old('Location', $device->location ?? '') }}" maxlength="255">
-            </div>
-
             @php
                 $isActive = old('IsActive', $device->active ?? 1);
             @endphp
@@ -419,10 +375,14 @@ label {
                 </select>
             </div>
 
-            <button type="submit">
-                {{ isset($device) ? 'Сохранить' : 'Создать' }}
-            </button>
+                    @if($isEdit)
+            @include('partials.last_change_card', ['lastChange' => $lastChange ?? null])
+        @endif
+
+
+            <button type="submit" class="main-submit-btn">{{ isset($device) ? 'Сохранить' : 'Создать' }}</button>
         </form>
+
     </div>
 </div>
 
@@ -430,7 +390,7 @@ label {
   <script>
     (function () {
       var typeSelect = document.getElementById('device_type');
-      var dirRow = document.getElementById('camera_direction_row');
+      var dirRow = document.getElementById('camera-direction-block');
 
       function updateDirectionVisibility() {
         if (!typeSelect || !dirRow) return;

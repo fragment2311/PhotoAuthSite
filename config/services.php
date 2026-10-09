@@ -35,4 +35,25 @@ return [
         ],
     ],
 
+    'telegram' => [
+        'enabled' => env('TELEGRAM_ENABLED', false),
+        'bot_token' => env('TELEGRAM_BOT_TOKEN', ''),
+        'chat_id' => env('TELEGRAM_CHAT_ID', ''),
+        'levels' => env('TELEGRAM_LEVELS', 'error,critical,fatal,emergency,alert'),
+    ],
+
+    'error_notifications' => [
+        'email_to' => env('ERROR_NOTIFICATION_EMAIL_TO', 'access_line@bk.ru'),
+        'queue_connection' => env('ERROR_NOTIFICATION_QUEUE_CONNECTION', env('QUEUE_CONNECTION', 'sync')),
+        'queue_name' => env('ERROR_NOTIFICATION_QUEUE_NAME', 'error-notifications'),
+        'email_tries' => (int) env('ERROR_NOTIFICATION_EMAIL_TRIES', 5),
+        'email_backoff_seconds' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('ERROR_NOTIFICATION_EMAIL_BACKOFF_SECONDS', '30,120,300'))
+        ))),
+        'email_dedupe_seconds' => (int) env('ERROR_NOTIFICATION_EMAIL_DEDUPE_SECONDS', 180),
+        'email_rate_limit_per_minute' => (int) env('ERROR_NOTIFICATION_EMAIL_RATE_LIMIT_PER_MINUTE', 30),
+        'api_audit_success_sample' => (float) env('API_AUDIT_SUCCESS_SAMPLE', 0.02),
+    ],
+
 ];

@@ -146,7 +146,16 @@
                   <td class="actions-cell">
                     <div class="tactions">
 
-                      {{-- Редактировать (оставляем ссылку как было), просто даём “табличный” класс --}}
+                      
+                        @method('PATCH')
+
+                        @if($user->IsActive)
+                          <button type="submit" class="action-btn-row">Заблокировать</button>
+                        @else
+                          <button type="submit" class="action-btn-row secondary">Активировать</button>
+                        @endif
+
+                        {{-- Редактировать (оставляем ссылку как было), просто даём “табличный” класс --}}
                       <a href="{{ route('admin.users.edit', ['user' => $user->Id]) }}"
 
                          class="action-btn-row secondary"
@@ -158,13 +167,6 @@
                             
                             style="display:inline">
                         @csrf
-                        @method('PATCH')
-
-                        @if($user->IsActive)
-                          <button type="submit" class="action-btn-row">Заблокировать</button>
-                        @else
-                          <button type="submit" class="action-btn-row secondary">Активировать</button>
-                        @endif
                       </form>
 
                     </div>

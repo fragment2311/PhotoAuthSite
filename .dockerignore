@@ -13,6 +13,8 @@ public/storage
 storage
 
 tests
+update-agent
+update-agent-backups
 *.md
 *.log
 # НЕ исключай папку docker/ — она нужна для php.ini

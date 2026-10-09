@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
 use App\Models\Webuser;
 use App\Models\Role;
+use App\Services\ChangeHistoryService;
 
 class AdminController extends Controller
 {
@@ -32,7 +33,10 @@ class AdminController extends Controller
     public function edit(Webuser $user)
     {
         $roles = Role::all();
-        return view('admin.edit_user', compact('user', 'roles'));
+        $lastChange = app(ChangeHistoryService::class)
+            ->latestFor(class_basename($user), $user->getKey());
+
+        return view('admin.edit_user', compact('user', 'roles', 'lastChange'));
     }
 
     /** 3) Сохранение редактирования */

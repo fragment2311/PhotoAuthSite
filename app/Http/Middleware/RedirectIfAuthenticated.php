@@ -2,7 +2,6 @@
 
 namespace App\Http\Middleware;
 
-use App\Support\MasterAuthUser;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -12,11 +11,6 @@ class RedirectIfAuthenticated
 {
     public function handle(Request $request, Closure $next, string ...$guards): Response
     {
-        if ((bool) $request->session()->get('master_auth', false) === true) {
-            Auth::setUser(new MasterAuthUser());
-            return redirect()->route('gallery', ['dir' => $this->galleryRootDir()]);
-        }
-
         $guards = $guards === [] ? [null] : $guards;
 
         foreach ($guards as $guard) {

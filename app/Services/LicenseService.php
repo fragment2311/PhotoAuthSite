@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Support\NewtonsoftPayload;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Log;
 
 final class LicenseService
 {
@@ -16,7 +15,10 @@ final class LicenseService
         $ttl = max(30, (int) config('license.cache_ttl_seconds', 120));
 
         return Cache::remember(self::CACHE_KEY, $ttl, function () {
-            return $this->evaluate();
+            $status = $this->evaluate();
+            $this->logLicenseState($status, 'evaluate');
+
+            return $status;
         });
     }
 
@@ -53,7 +55,7 @@ final class LicenseService
 
         // Нет лицензии/невалидна подпись/не совпал client_id/и т.д.
         if (!($st['valid'] ?? false)) {
-            return [
+            return $this->finalizeReportAccess([
                 'allowed_view' => false,
                 'allowed_download' => false,
                 'reason' => $st['reason'] ?? 'license_invalid',
@@ -62,12 +64,12 @@ final class LicenseService
                     'type' => 'danger',
                     'text' => $this->humanBannerTextForInvalid($st),
                 ],
-            ];
+            ]);
         }
 
         // Фича отчета выключена лицензией
         if (!(bool)($st['features']['report'] ?? false)) {
-            return [
+            return $this->finalizeReportAccess([
                 'allowed_view' => false,
                 'allowed_download' => false,
                 'reason' => 'feature_report_disabled',
@@ -76,13 +78,13 @@ final class LicenseService
                     'type' => 'danger',
                     'text' => 'Функция "Отчет" отключена лицензией.',
                 ],
-            ];
+            ]);
         }
 
         // Даты (в статусе мы держим valid_until как строку YYYY-MM-DD)
         $validUntil = (string)($st['valid_until'] ?? '');
         if ($validUntil === '') {
-            return [
+            return $this->finalizeReportAccess([
                 'allowed_view' => false,
                 'allowed_download' => false,
                 'reason' => 'valid_until_missing',
@@ -91,7 +93,7 @@ final class LicenseService
                     'type' => 'danger',
                     'text' => 'Лицензия повреждена: отсутствует valid_until.',
                 ],
-            ];
+            ]);
         }
 
         $graceDays = max(0, (int) config('license.grace_days', 7));
@@ -100,7 +102,7 @@ final class LicenseService
         try {
             $expiresAt = CarbonImmutable::createFromFormat('Y-m-d', $validUntil, $tz)->endOfDay();
         } catch (\Throwable) {
-            return [
+            return $this->finalizeReportAccess([
                 'allowed_view' => false,
                 'allowed_download' => false,
                 'reason' => 'valid_until_parse_failed',
@@ -109,7 +111,7 @@ final class LicenseService
                     'type' => 'danger',
                     'text' => 'Лицензия повреждена: некорректная дата valid_until.',
                 ],
-            ];
+            ]);
         }
 
         $now = CarbonImmutable::now($tz);
@@ -122,7 +124,7 @@ final class LicenseService
             // Показываем баннер только если осталось <= warnBeforeDays
             $showWarn = ($warnBeforeDays > 0) && ($secondsLeft <= ($warnBeforeDays * 86400));
 
-            return [
+            return $this->finalizeReportAccess([
                 'allowed_view' => true,
                 'allowed_download' => true,
                 'reason' => null,
@@ -133,14 +135,14 @@ final class LicenseService
                         ? ('Лицензия заканчивается через ' . $this->humanizeSeconds($secondsLeft) . '.')
                         : '',
                 ],
-            ];
+            ]);
         }
 
         // 2) Grace период
         if ($now->greaterThan($expiresAt) && $now->lessThanOrEqualTo($graceUntil)) {
             $secondsGraceLeft = $now->diffInSeconds($graceUntil, false); // >=0
 
-            return [
+            return $this->finalizeReportAccess([
                 'allowed_view' => true,
                 'allowed_download' => true,
                 'reason' => 'grace_period',
@@ -150,11 +152,11 @@ final class LicenseService
                     'text' => 'Лицензия истекла, но действует grace-период. Осталось '
                         . $this->humanizeSeconds($secondsGraceLeft) . '.',
                 ],
-            ];
+            ]);
         }
 
         // 3) Grace закончился — блокируем
-        return [
+        return $this->finalizeReportAccess([
             'allowed_view' => false,
             'allowed_download' => false,
             'reason' => 'license_expired_grace_over',
@@ -163,7 +165,7 @@ final class LicenseService
                 'type' => 'danger',
                 'text' => 'Лицензия истекла, grace-период закончился. Отчет недоступен.',
             ],
-        ];
+        ]);
     }
 
     // -------------------- INTERNAL --------------------
@@ -250,12 +252,7 @@ final class LicenseService
 
         // payload JSON строго как C# Newtonsoft (SnakeCase, Formatting.None, порядок полей, features отсортирован)
         try {
-            $this->log('info', 'Payload builder class check', [
-    'support_exists' => class_exists(\App\Support\NewtonsoftPayload::class),
-    'services_exists' => class_exists(\App\Services\NewtonsoftPayload::class),
-]);
-
-$payloadJson = \App\Support\NewtonsoftPayload::build($clientId, $validUntil, $issuedAt, $featuresIn);
+            $payloadJson = NewtonsoftPayload::build($clientId, $validUntil, $issuedAt, $featuresIn);
         }  catch (\Throwable $e) {
     $this->log('error', 'Payload build failed', [
         'error' => $e->getMessage(),
@@ -307,11 +304,38 @@ $payloadJson = \App\Support\NewtonsoftPayload::build($clientId, $validUntil, $is
 
     private function invalid(string $reason, array $extra = []): array
     {
+        $this->log('warning', 'Лицензия невалидна', array_merge(['причина' => $reason], $extra));
+
         return array_merge([
             'valid' => false,
             'reason' => $reason,
             'features' => [],
         ], $extra);
+    }
+
+    private function logLicenseState(array $status, string $source): void
+    {
+        $this->log('info', 'Состояние лицензии', [
+            'источник' => $source,
+            'валидна' => (bool)($status['valid'] ?? false),
+            'причина' => $status['reason'] ?? null,
+            'client_id' => $status['client_id'] ?? null,
+            'действует_до' => $status['valid_until'] ?? null,
+            'функции' => $status['features'] ?? [],
+        ]);
+    }
+
+    private function finalizeReportAccess(array $access): array
+    {
+        $this->log('info', 'Доступ к отчёту по лицензии', [
+            'просмотр_разрешен' => (bool)($access['allowed_view'] ?? false),
+            'скачивание_разрешено' => (bool)($access['allowed_download'] ?? false),
+            'причина' => $access['reason'] ?? null,
+            'баннер_показывать' => (bool)($access['banner']['show'] ?? false),
+            'тип_баннера' => $access['banner']['type'] ?? null,
+        ]);
+
+        return $access;
     }
 
     private function humanBannerTextForInvalid(array $st): string
@@ -350,7 +374,112 @@ $payloadJson = \App\Support\NewtonsoftPayload::build($clientId, $validUntil, $is
 
     private function log(string $level, string $message, array $context = []): void
     {
-        Log::channel('license')->log($level, $message, $context);
+        $safeMessage = $this->buildSafeLicenseMessage($message, $context);
+
+        // Для лицензии не передаём JSON/контекст в общий журнал и файл лога,
+        // чтобы не раскрывать конфигурационные детали.
+        app(ErrorNotificationService::class)->log($level, $safeMessage, []);
+
+        $this->appendToUnifiedLog($level, $safeMessage, []);
+    }
+
+    private function buildSafeLicenseMessage(string $message, array $context): string
+    {
+        $reason = $context['причина'] ?? $context['reason'] ?? null;
+
+        if (!is_string($reason) || trim($reason) === '') {
+            return $message;
+        }
+
+        return $message . ' (код: ' . trim($reason) . ')';
+    }
+
+    private function appendToUnifiedLog(string $level, string $message, array $context = []): void
+    {
+        $path = (string) config('license.log_path', storage_path('logs/license.log'));
+        $dir = dirname($path);
+
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0775, true);
+        }
+
+        $line = $this->formatUnifiedLogLine($level, $message, $context) . PHP_EOL;
+        @file_put_contents($path, $line, FILE_APPEND | LOCK_EX);
+
+        $this->pruneUnifiedLogSometimes($path);
+    }
+
+    private function formatUnifiedLogLine(string $level, string $message, array $context = []): string
+    {
+        $tz = (string) config('license.timezone', 'UTC');
+        $stamp = CarbonImmutable::now($tz)->format('Y-m-d H:i:s');
+
+        $suffix = '';
+        if ($context !== []) {
+            $json = json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            if ($json === false) {
+                $json = '{"context_encode_error":"' . json_last_error_msg() . '"}';
+            }
+            $suffix = ' ' . $json;
+        }
+
+        return sprintf('[%s] [%s] %s%s', $stamp, strtoupper($level), $message, $suffix);
+    }
+
+    private function pruneUnifiedLogSometimes(string $path): void
+    {
+        $chance = (int) config('license.log_prune_chance_percent', 5);
+        $chance = max(0, min(100, $chance));
+        if ($chance === 0) {
+            return;
+        }
+
+        try {
+            if (random_int(1, 100) > $chance) {
+                return;
+            }
+        } catch (\Throwable) {
+            return;
+        }
+
+        clearstatcache(true, $path);
+        if (!is_file($path)) {
+            return;
+        }
+
+        $size = @filesize($path);
+        if (!is_int($size) || $size <= 0) {
+            return;
+        }
+
+        $maxSize = max(1024, (int) config('license.log_max_size_bytes', 5 * 1024 * 1024));
+        $keepSize = max(512, (int) config('license.log_keep_bytes', 1024 * 1024));
+        if ($keepSize > $maxSize) {
+            $keepSize = $maxSize;
+        }
+
+        if ($size <= $maxSize) {
+            return;
+        }
+
+        $fp = @fopen($path, 'rb');
+        if ($fp === false) {
+            return;
+        }
+
+        $offset = max(0, $size - $keepSize);
+        @fseek($fp, $offset);
+        $tail = (string) stream_get_contents($fp);
+        @fclose($fp);
+
+        if ($offset > 0) {
+            $firstNewLinePos = strpos($tail, "\n");
+            if ($firstNewLinePos !== false) {
+                $tail = (string) substr($tail, $firstNewLinePos + 1);
+            }
+        }
+
+        @file_put_contents($path, $tail, LOCK_EX);
     }
 
     private function drainOpenSslErrors(): array

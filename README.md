@@ -27,25 +27,71 @@ AUTO_INSTALL_PHP_DEPS=false
 cp .env.example .env
 ```
 
-2. Убедиться, что в `.env`:
+2. Минимально проверить/заполнить в `.env`:
 
 ```env
 APP_URL=http://localhost:27017
+APP_KEY=
+
+DB_CONNECTION=remote_mysql
+REMOTE_DB_HOST=127.0.0.1
+REMOTE_DB_PORT=3306
+REMOTE_DB_DATABASE=laravel
+REMOTE_DB_USERNAME=root
+REMOTE_DB_PASSWORD=
+
+REDIS_HOST=redis
+REDIS_PORT=6379
+
+AUTO_INSTALL_PHP_DEPS=true
+MIGRATE_ON_START=false
+
 DH_USER=fragment213
 APP_REPO=photoauthapp
 APP_TAG=prod
-AUTO_INSTALL_PHP_DEPS=true
 ```
 
 3. Сборка и запуск:
 
 ```bash
-docker compose up -d --build
+docker compose -f compose.yaml up -d --build
 ```
 
 4. Проверка:
 
-Открыть `http://localhost:27017/login`
+- открыть `http://localhost:27017/login`;
+- проверить статус контейнеров:
+
+```bash
+docker compose -f compose.yaml ps
+```
+
+`APP_KEY` можно оставить пустым — он будет автоматически сгенерирован при первом старте.
+
+## Оптимизации производительности (включено)
+
+- Кэш и сессии можно перевести на Redis через `.env`:
+
+```env
+CACHE_STORE=redis
+CACHE_DRIVER=redis
+SESSION_DRIVER=redis
+REDIS_HOST=redis
+REDIS_PORT=6379
+```
+
+- В `compose.yaml` добавлен сервис Redis для локального/контейнерного запуска.
+- Для отчета по проходам добавлено:
+  - ограничение периода (по умолчанию до 62 дней),
+  - кэш справочников (отделы/должности),
+  - кэш расчета дневных часов (используется и в просмотре, и в экспорте).
+- Для генерации миниатюр добавлена блокировка через cache lock (защита от stampede при одновременных запросах).
+
+Тюнинг в `config/worktime.php`:
+
+- `report_max_days`
+- `lookup_cache_ttl_seconds`
+- `report_cache_ttl_seconds`
 
 ## Работа с Docker Hub
 
@@ -67,7 +113,7 @@ docker compose -f compose.build.yaml push
 docker compose -f compose.yaml up -d
 ```
 
-`compose.yaml` и `docker-compose.yml` используют образ из переменных:
+`compose.yaml` использует образ из переменных:
 
 `$DH_USER/$APP_REPO:$APP_TAG`
 

@@ -4,9 +4,11 @@
   $isAdminOpen =
       request()->routeIs('admin.*')
       || request()->routeIs('admin.devices.*')
+      || request()->routeIs('admin.locations.*')
       || request()->routeIs('admin.users')
       || request()->routeIs('admin.register')
-      || request()->routeIs('admin.settings.*');
+      || request()->routeIs('admin.settings.*')
+      || request()->routeIs('admin.logs.*');
 @endphp
 
 <aside class="app-sidebar d-flex flex-column">
@@ -46,6 +48,9 @@
         <a class="app-nav-sublink {{ request()->routeIs('admin.devices.*') ? 'active' : '' }}"
            href="{{ route('admin.devices.index') }}">Устройства</a>
 
+        <a class="app-nav-sublink {{ request()->routeIs('admin.locations.*') ? 'active' : '' }}"
+           href="{{ route('admin.locations.index') }}">Локации</a>
+
         <a class="app-nav-sublink {{ request()->routeIs('admin.users') ? 'active' : '' }}"
            href="{{ route('admin.users') }}">Пользователи</a>
 
@@ -56,6 +61,11 @@
 @if (\Illuminate\Support\Facades\Route::has('admin.settings.index'))
   <a class="app-nav-sublink {{ request()->routeIs('admin.settings.*') ? 'active' : '' }}"
      href="{{ route('admin.settings.index') }}">Настройки</a>
+@endif
+
+@if (\Illuminate\Support\Facades\Route::has('admin.logs.index'))
+  <a class="app-nav-sublink {{ request()->routeIs('admin.logs.*') ? 'active' : '' }}"
+     href="{{ route('admin.logs.index') }}">Журнал логов</a>
 @endif
       </div>
     </div>

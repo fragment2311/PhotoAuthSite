@@ -6,9 +6,11 @@ use App\Models\ControllerDevice;
 use App\Models\Camera;
 use App\Models\Location;
 use App\Models\PairDevice;
+use App\Models\PairDeviceMember;
+use App\Services\ChangeHistoryService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -21,9 +23,13 @@ class DevicesController extends Controller
     {
         $controllers = ControllerDevice::orderBy('id')->get();
         $cameras     = Camera::orderBy('id')->get();
-        $pairs       = PairDevice::with(['controller', 'entryCamera', 'exitCamera'])
+        $pairs       = PairDevice::with(['members.controller', 'members.camera', 'locationRef'])
             ->orderBy('Id')
             ->get();
+
+        $pairs->each(function (PairDevice $pair): void {
+            $this->hydratePairEndpointRelations($pair);
+        });
 
         return view('admin.devices.index', compact('controllers', 'cameras', 'pairs'));
     }
@@ -33,10 +39,14 @@ class DevicesController extends Controller
      */
     public function create()
     {
+        $locations = $this->loadLocationsForSelect();
+
         return view('admin.devices.create', [
-            'device' => null,
-            'type'   => null,
-            'title'  => 'Создать устройство',
+            'device'              => null,
+            'type'                => null,
+            'title'               => 'Создать устройство',
+            'locations'           => $locations,
+            'selectedLocationId'  => null,
         ]);
     }
 
@@ -51,13 +61,24 @@ class DevicesController extends Controller
             'Port'        => ['required', 'integer', 'min:1', 'max:65535'],
             'Login'       => ['required', 'string', 'max:100'],
             'Password'    => ['required', 'string', 'max:255'],
-            'Location'    => ['nullable', 'string', 'max:255'],
+            'Location'    => [
+                Rule::requiredIf(fn () => $this->typeHasColumn((string) $request->input('device_type', ''), 'Location')),
+                'nullable',
+                'integer',
+                'exists:location,IdLocation',
+            ],
             'IsActive'    => ['nullable', 'boolean'],
             // только для камер:
             'Direction'   => [
                 Rule::requiredIf(fn () => $request->input('device_type') === 'camera'),
                 Rule::in(['entry', 'exit', 'other']),
             ],
+        ], [
+            'Location.required' => 'Поле «Расположение» обязательно для заполнения.',
+            'Location.integer'  => 'Поле «Расположение» заполнено некорректно.',
+            'Location.exists'   => 'Выбранная локация не найдена.',
+        ], [
+            'Location' => 'расположение',
         ]);
 
         $common = [
@@ -66,10 +87,16 @@ class DevicesController extends Controller
             'Login'            => $validated['Login'],
             // ВАЖНО: пароли сразу шифруем.
             'Password'         => Crypt::encryptString($validated['Password']),
-            'Location'         => $validated['Location'] ?? null,
             'IsActive'         => !empty($validated['IsActive']) ? 1 : 0,
             'Last_modified_at' => now(),
         ];
+
+        if ($this->typeHasColumn($validated['device_type'], 'Location')) {
+            $common['Location'] = $this->resolveDeviceLocationValue(
+                isset($validated['Location']) ? (int) $validated['Location'] : null,
+                $validated['device_type']
+            );
+        }
 
         if ($validated['device_type'] === 'camera') {
             $payload = $common + ['Direction' => $validated['Direction']];
@@ -105,11 +132,18 @@ class DevicesController extends Controller
     public function edit(string $type, int $id)
     {
         $device = $this->resolveDevice($type, $id);
+        $locations = $this->loadLocationsForSelect();
+        $selectedLocationId = $this->resolveSelectedLocationId($device->location ?? null);
+        $lastChange = app(ChangeHistoryService::class)
+            ->latestFor(class_basename($device), $device->getKey());
 
         return view('admin.devices.create', [
-            'device' => $device,
-            'type'   => $type,
-            'title'  => $type === 'controller'
+            'device'              => $device,
+            'type'                => $type,
+            'locations'           => $locations,
+            'selectedLocationId'  => $selectedLocationId,
+            'lastChange'          => $lastChange,
+            'title'               => $type === 'controller'
                 ? 'Редактировать контроллер'
                 : 'Редактировать камеру',
         ]);
@@ -121,13 +155,19 @@ class DevicesController extends Controller
     public function update(Request $request, string $type, int $id)
     {
         $device = $this->resolveDevice($type, $id);
+        $existingEncryptedPassword = $device->getOriginal('Password') ?? $device->getOriginal('password');
 
         $rules = [
             'ip_address' => ['required', 'ip'],
             'Port'       => ['required', 'integer', 'min:1', 'max:65535'],
             'Login'      => ['required', 'string', 'max:100'],
-            'Password'   => ['nullable', 'string', 'max:255'],
-            'Location'   => ['nullable', 'string', 'max:255'],
+            'Password'   => [Rule::requiredIf(empty($existingEncryptedPassword)), 'nullable', 'string', 'max:255'],
+            'Location'   => [
+                Rule::requiredIf($this->modelHasColumn($device, 'Location')),
+                'nullable',
+                'integer',
+                'exists:location,IdLocation',
+            ],
             'IsActive'   => ['nullable', 'boolean'],
         ];
 
@@ -135,7 +175,15 @@ class DevicesController extends Controller
             $rules['Direction'] = ['required', Rule::in(['entry', 'exit', 'other'])];
         }
 
-        $data = $request->validate($rules);
+        $data = $request->validate($rules, [
+            'Password.required' => 'Пароль обязателен, так как у устройства ещё не задан пароль.',
+            'Location.required' => 'Поле «Расположение» обязательно для заполнения.',
+            'Location.integer'  => 'Поле «Расположение» заполнено некорректно.',
+            'Location.exists'   => 'Выбранная локация не найдена.',
+        ], [
+            'Password' => 'пароль',
+            'Location' => 'расположение',
+        ]);
 
         $device->ip_address       = $data['ip_address'];
         $device->Port             = $data['Port'];
@@ -146,7 +194,12 @@ class DevicesController extends Controller
             $device->Password = Crypt::encryptString($data['Password']);
         }
 
-        $device->Location         = $data['Location'] ?? null;
+        if ($this->modelHasColumn($device, 'Location')) {
+            $device->Location = $this->resolveDeviceLocationValue(
+                isset($data['Location']) ? (int) $data['Location'] : null,
+                $type
+            );
+        }
         $device->IsActive         = !empty($data['IsActive']) ? 1 : 0;
         $device->Last_modified_at = now();
 
@@ -199,6 +252,7 @@ class DevicesController extends Controller
             'controllers' => $controllers,
             'cameras'     => $cameras,
             'locations'   => $locations,
+            'pairRelations' => [],
         ]);
     }
 
@@ -209,37 +263,20 @@ class DevicesController extends Controller
     {
         $this->ensureAdminAccess();
 
-        $controllersTable = (new ControllerDevice())->getTable();
-        $camerasTable     = (new Camera())->getTable();
-
-        $validated = $request->validate([
-            'Name'            => 'required|string|max:100',
-            'location_id'     => ['nullable', 'integer', 'exists:location,IdLocation', 'required_without:new_location'],
-            'new_location'    => ['nullable', 'string', 'max:150', 'required_without:location_id', 'regex:/^[\pL\pN\s\-.,()#\/]+$/u'],
-            'controller_id'   => "required|integer|exists:{$controllersTable},id",
-            'entry_camera_id' => "required|integer|exists:{$camerasTable},id",
-            'exit_camera_id'  => "nullable|integer|different:entry_camera_id|exists:{$camerasTable},id",
-            'Comment'         => 'nullable|string|max:255',
-            'IsActive'        => 'nullable|boolean',
-        ]);
+        $validated = $this->validatePairRequest($request);
 
         DB::transaction(function () use ($validated): void {
-            $resolvedLocationId = $this->resolveLocationId(
-                isset($validated['location_id']) ? (int) $validated['location_id'] : null,
-                $validated['new_location'] ?? null
-            );
 
             $pair = new PairDevice();
             $pair->Name             = $validated['Name'];
-            $pair->Location         = $resolvedLocationId;
-            $pair->Controller_id    = $validated['controller_id'];
-            $pair->Entry_camera_id  = $validated['entry_camera_id'];
-            $pair->Exit_camera_id   = $validated['exit_camera_id'] ?? null;
+            $pair->Location         = (int) $validated['location_id'];
             $pair->Comment          = $validated['Comment'] ?? null;
             $pair->IsActive         = !empty($validated['IsActive']) ? 1 : 0;
             $pair->Last_modified_at = now();
 
             $pair->save();
+
+            $this->syncPairMembers($pair, $validated);
         });
 
         return redirect()
@@ -253,6 +290,8 @@ class DevicesController extends Controller
     public function pairsEdit(int $id)
     {
         $pair = PairDevice::findOrFail($id);
+        $lastChange = app(ChangeHistoryService::class)
+            ->latestFor(class_basename($pair), $pair->getKey());
 
         $controllers = ControllerDevice::where('IsActive', 1)->orderBy('id')->get();
         $cameras     = Camera::where('IsActive', 1)->orderBy('id')->get();
@@ -261,11 +300,15 @@ class DevicesController extends Controller
             ->orderBy('LocationName')
             ->get();
 
+        $relations = $this->loadPairRelationsForForm($pair);
+
         return view('admin.devices.pairs_create', [
             'pair'        => $pair,
             'controllers' => $controllers,
             'cameras'     => $cameras,
             'locations'   => $locations,
+            'pairRelations' => $relations,
+            'lastChange'  => $lastChange,
         ]);
     }
 
@@ -278,36 +321,19 @@ class DevicesController extends Controller
 
         $pair = PairDevice::findOrFail($id);
 
-        $controllersTable = (new ControllerDevice())->getTable();
-        $camerasTable     = (new Camera())->getTable();
-
-        $validated = $request->validate([
-            'Name'            => 'required|string|max:100',
-            'location_id'     => ['nullable', 'integer', 'exists:location,IdLocation', 'required_without:new_location'],
-            'new_location'    => ['nullable', 'string', 'max:150', 'required_without:location_id', 'regex:/^[\pL\pN\s\-.,()#\/]+$/u'],
-            'controller_id'   => "required|integer|exists:{$controllersTable},id",
-            'entry_camera_id' => "required|integer|exists:{$camerasTable},id",
-            'exit_camera_id'  => "nullable|integer|different:entry_camera_id|exists:{$camerasTable},id",
-            'Comment'         => 'nullable|string|max:255',
-            'IsActive'        => 'nullable|boolean',
-        ]);
+        $validated = $this->validatePairRequest($request, $pair);
 
         DB::transaction(function () use ($validated, $pair): void {
-            $resolvedLocationId = $this->resolveLocationId(
-                isset($validated['location_id']) ? (int) $validated['location_id'] : null,
-                $validated['new_location'] ?? null
-            );
 
             $pair->Name             = $validated['Name'];
-            $pair->Location         = $resolvedLocationId;
-            $pair->Controller_id    = $validated['controller_id'];
-            $pair->Entry_camera_id  = $validated['entry_camera_id'];
-            $pair->Exit_camera_id   = $validated['exit_camera_id'] ?? null;
+            $pair->Location         = (int) $validated['location_id'];
             $pair->Comment          = $validated['Comment'] ?? null;
             $pair->IsActive         = !empty($validated['IsActive']) ? 1 : 0;
             $pair->Last_modified_at = now();
 
             $pair->save();
+
+            $this->syncPairMembers($pair, $validated);
         });
 
         return redirect()
@@ -361,6 +387,83 @@ class DevicesController extends Controller
         ]);
     }
 
+    private function typeHasColumn(string $type, string $column): bool
+    {
+        $model = $type === 'camera' ? new Camera() : new ControllerDevice();
+
+        return $this->modelHasColumn($model, $column);
+    }
+
+    private function loadLocationsForSelect()
+    {
+        return Location::query()
+            ->select('IdLocation', 'LocationName')
+            ->orderBy('LocationName')
+            ->get();
+    }
+
+    private function resolveDeviceLocationValue(?int $locationId, string $deviceType): mixed
+    {
+        if (empty($locationId)) {
+            return null;
+        }
+
+        $location = Location::query()->find($locationId);
+        if (!$location) {
+            return null;
+        }
+
+        $model = $deviceType === 'camera' ? new Camera() : new ControllerDevice();
+
+        try {
+            $columnType = Schema::connection($model->getConnectionName())
+                ->getColumnType($model->getTable(), 'Location');
+
+            if (str_contains(mb_strtolower((string) $columnType), 'int')) {
+                return (int) $location->IdLocation;
+            }
+        } catch (\Throwable $e) {
+            // Если тип колонки определить не удалось, используем безопасный fallback ниже.
+        }
+
+        return (string) $location->LocationName;
+    }
+
+    private function resolveSelectedLocationId($rawLocation): ?int
+    {
+        if ($rawLocation === null || $rawLocation === '') {
+            return null;
+        }
+
+        if (is_numeric($rawLocation)) {
+            $id = (int) $rawLocation;
+            $exists = Location::query()->where('IdLocation', $id)->exists();
+
+            return $exists ? $id : null;
+        }
+
+        $normalized = mb_strtolower(trim((string) $rawLocation));
+        if ($normalized === '') {
+            return null;
+        }
+
+        $found = Location::query()
+            ->whereRaw('LOWER(TRIM(LocationName)) = ?', [$normalized])
+            ->first();
+
+        return $found ? (int) $found->IdLocation : null;
+    }
+
+    private function modelHasColumn($model, string $column): bool
+    {
+        try {
+            return Schema::connection($model->getConnectionName())
+                ->hasColumn($model->getTable(), $column);
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
     private function ensureAdminAccess(): void
     {
         $user = auth()->user();
@@ -369,144 +472,100 @@ class DevicesController extends Controller
         abort_unless($user && $role === 'администратор', 403, 'Доступ запрещён.');
     }
 
-    // =========================
-    // INTERNAL API для SmartPass
-    // =========================
-
-    /**
-     * GET /api/device-pairs/active
-     *
-     * Возвращает список всех АКТИВНЫХ пар устройств с расшифрованными паролями
-     * контроллера и камер.
-     *
-     * Безопасность:
-     *  - endpoint защищён middleware 'smartpass.api', который проверяет X-Api-Token;
-     *  - используется только для доверенного C#-сервиса SmartPass;
-     *  - пароли расшифровываются ТОЛЬКО здесь и не логируются.
-     */
-    public function apiActivePairs()
+    private function validatePairRequest(Request $request, ?PairDevice $pair = null): array
     {
-        $pairs = PairDevice::with(['controller', 'entryCamera', 'exitCamera'])
-            ->where('IsActive', 1)
-            ->get();
+        $controllersTable = (new ControllerDevice())->getTable();
+        $camerasTable = (new Camera())->getTable();
 
-        $result = [];
+        $validated = $request->validate([
+            'Name' => ['required', 'string', 'max:100'],
+            'location_id' => ['required', 'integer', 'exists:location,IdLocation'],
+            'Comment' => ['nullable', 'string', 'max:255'],
+            'IsActive' => ['nullable', 'boolean'],
+            'controller_id' => ['required', 'integer', "exists:{$controllersTable},id"],
+            'entry_camera_id' => ['nullable', 'integer', "exists:{$camerasTable},id", 'different:exit_camera_id'],
+            'exit_camera_id' => ['nullable', 'integer', "exists:{$camerasTable},id"],
+        ], [
+            'location_id.required' => 'Выберите точку.',
+            'controller_id.required' => 'Выберите контроллер.',
+            'entry_camera_id.different' => 'Одна камера не может быть назначена одновременно для входа и выхода.',
+        ]);
 
-        foreach ($pairs as $pair) {
-            // Пара без контроллера – пропускаем (неконсистентные данные)
-            if (!$pair->controller) {
+        $this->ensureDevicesAreFree($validated, $pair?->Id);
+
+        return $validated;
+    }
+
+    private function ensureDevicesAreFree(array $validated, ?int $currentPairId): void
+    {
+        $checks = [
+            ['IdController', (int) ($validated['controller_id'] ?? 0), 'Контроллер уже назначен другой точке.'],
+            ['IdCamera', (int) ($validated['entry_camera_id'] ?? 0), 'Камера уже назначена другой точке.'],
+            ['IdCamera', (int) ($validated['exit_camera_id'] ?? 0), 'Камера уже назначена другой точке.'],
+        ];
+
+        foreach ($checks as [$column, $deviceId, $message]) {
+            if ($deviceId < 1) {
                 continue;
             }
 
-            $controller = $pair->controller;
-            $entry      = $pair->entryCamera;
-            $exit       = $pair->exitCamera;
+            $query = PairDeviceMember::query()->where($column, $deviceId);
+            if ($currentPairId !== null) {
+                $query->where('IdPairDevice', '!=', $currentPairId);
+            }
 
-            $result[] = [
-                'pair_id'      => (int)$pair->id,
-                'pair_name'    => $pair->name,
-                'comment'      => $pair->Comment ?? null,
-                'is_active'    => (bool)$pair->active,
-                'controller'   => $this->serializeDeviceForApi($controller),
-                'entry_camera' => $entry ? $this->serializeDeviceForApi($entry) : null,
-                'exit_camera'  => $exit ? $this->serializeDeviceForApi($exit) : null,
-            ];
+            if ($query->exists()) {
+                throw ValidationException::withMessages([$column => $message]);
+            }
         }
-
-        return response()->json($result);
     }
 
-    /**
-     * Преобразование камеры/контроллера в JSON-структуру для API,
-     * с расшифровкой пароля.
-     *
-     * Здесь сознательно:
-     *  - не логируем пароль и зашифрованную строку;
-     *  - используем getOriginal('Password'), чтобы явно взять значение из БД;
-     *  - в случае ошибки расшифровки возвращаем пароль = null, чтобы C#-клиент
-     *    мог отреагировать (например, залогировать на своей стороне).
-     */
-    private function serializeDeviceForApi($device): array
+    private function syncPairMembers(PairDevice $pair, array $validated): void
     {
-        // Нормализованные геттеры (ip, port, login, location, active, id)
-        $id        = (int)$device->id;
-        $ip        = $device->ip;
-        $port      = $device->port !== null ? (int)$device->port : null;
-        $login     = $device->login;
-        $location  = $device->location;
-        $isActive  = (bool)$device->active;
+        PairDeviceMember::query()->where('IdPairDevice', $pair->Id)->delete();
 
-        // Берём зашифрованное значение напрямую из атрибутов
-        $encrypted = $device->getOriginal('Password') ?? $device->getOriginal('password');
+        $members = [[
+            'IdPairDevice' => $pair->Id,
+            'IdController' => (int) $validated['controller_id'],
+            'IdCamera' => null,
+            'Role' => 'controller',
+            'SortOrder' => 10,
+            'IsActive' => 1,
+        ]];
 
-        $password = null;
-        if (!empty($encrypted)) {
-            try {
-                $password = Crypt::decryptString($encrypted);
-            } catch (\Throwable $e) {
-                // Никаких логов с паролем или ciphertext здесь,
-                // максимум – общий лог без данных, если понадобится.
-                $password = null;
+        foreach (['entry_camera_id' => ['entry_camera', 20], 'exit_camera_id' => ['exit_camera', 30]] as $field => [$role, $sortOrder]) {
+            $cameraId = (int) ($validated[$field] ?? 0);
+            if ($cameraId > 0) {
+                $members[] = [
+                    'IdPairDevice' => $pair->Id,
+                    'IdController' => null,
+                    'IdCamera' => $cameraId,
+                    'Role' => $role,
+                    'SortOrder' => $sortOrder,
+                    'IsActive' => 1,
+                ];
             }
         }
 
+        PairDeviceMember::query()->insert($members);
+    }
+
+    private function loadPairRelationsForForm(PairDevice $pair): array
+    {
+        $members = $pair->relationLoaded('members') ? $pair->members : $pair->members()->get();
+
         return [
-            'id'        => $id,
-            // "name" – у тебя отдельного поля нет, поэтому
-            // логично отдать Location как некое человекочитаемое имя.
-            'name'      => $location,
-            'ip'        => $ip,
-            'port'      => $port,
-            'login'     => $login,
-            'password'  => $password,
-            'location'  => $location,
-            'is_active' => $isActive,
+            'controller_id' => (int) optional($members->firstWhere('Role', 'controller'))->IdController,
+            'entry_camera_id' => (int) optional($members->firstWhere('Role', 'entry_camera'))->IdCamera,
+            'exit_camera_id' => (int) optional($members->firstWhere('Role', 'exit_camera'))->IdCamera,
         ];
     }
 
-    /**
-     * Получение активных пар устройств.
-     */
-    public function getActiveDevicePairs(Request $request)
+    private function hydratePairEndpointRelations(PairDevice $pair): void
     {
-        // Проверка API токена (без анонимного доступа)
-        $this->authorize('access-api', Role::class);
-
-        // Получаем активные пары устройств с контроллером и камерами
-        $pairs = PairDevice::with(['controller', 'entryCamera', 'exitCamera'])
-            ->where('IsActive', 1)
-            ->get();
-
-        // Подготовка данных для ответа
-        $response = $pairs->map(function ($pair) {
-            return [
-                'pair_id' => $pair->Id,
-                'pair_name' => $pair->Name,
-                'controller' => [
-                    'id' => $pair->controller->Id,
-                    'ip' => $pair->controller->Ip,
-                    'port' => $pair->controller->Port,
-                    'login' => $pair->controller->Login,
-                    'password' => Crypt::decryptString($pair->controller->Password),  // Расшифровка пароля контроллера
-                ],
-                'entry_camera' => $pair->entryCamera ? [
-                    'id' => $pair->entryCamera->Id,
-                    'ip' => $pair->entryCamera->Ip,
-                    'port' => $pair->entryCamera->Port,
-                    'login' => $pair->entryCamera->Login,
-                    'password' => Crypt::decryptString($pair->entryCamera->Password),  // Расшифровка пароля камеры входа
-                ] : null,
-                'exit_camera' => $pair->exitCamera ? [
-                    'id' => $pair->exitCamera->Id,
-                    'ip' => $pair->exitCamera->Ip,
-                    'port' => $pair->exitCamera->Port,
-                    'login' => $pair->exitCamera->Login,
-                    'password' => Crypt::decryptString($pair->exitCamera->Password),  // Расшифровка пароля камеры выхода
-                ] : null,
-                'is_active' => $pair->IsActive,
-            ];
-        });
-
-        return response()->json($response);
+        $members = $pair->members;
+        $pair->setRelation('controller', optional($members->firstWhere('Role', 'controller'))->controller);
+        $pair->setRelation('entryCamera', optional($members->firstWhere('Role', 'entry_camera'))->camera);
+        $pair->setRelation('exitCamera', optional($members->firstWhere('Role', 'exit_camera'))->camera);
     }
 }

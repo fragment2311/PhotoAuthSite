@@ -5,6 +5,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 
 class Webuser extends Authenticatable
 {
+    protected $connection = 'remote_mysql';
     protected $table = 'webusers';
     protected $primaryKey = 'Id';
     public $timestamps = false;

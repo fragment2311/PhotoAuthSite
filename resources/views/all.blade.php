@@ -98,6 +98,9 @@
     }
     #back-to-top.show { display: flex; opacity: 1; }
     #back-to-top:hover { background: var(--link-hover); }
+    .search-loading[hidden] { display:none; }
+    .search-loading { position:fixed; inset:0; z-index:2000; display:flex; align-items:center; justify-content:center; padding:1rem; background:rgba(15, 23, 42, .42); }
+    .search-loading__panel { max-width:360px; padding:1.25rem 1.5rem; border-radius:12px; background:#fff; color:#111827; box-shadow:0 18px 50px rgba(0,0,0,.25); text-align:center; font-size:1.1rem; }
   </style>
 
   <link rel="stylesheet" href="{{ asset('css/header-buttons.css') }}">
@@ -112,6 +115,8 @@
       $path = (string)($path ?? '');
       if ($path === '') return '';
       if (preg_match('~^https?://~i', $path)) return $path;
+      $httpBaseUrl = trim((string)($httpBaseUrl ?? ''));
+      if ($httpBaseUrl === '') return '';
       if (str_starts_with($path, '/')) return rtrim($httpBaseUrl, '/') . $path;
       return rtrim($httpBaseUrl, '/') . '/' . ltrim($path, '/');
     }
@@ -120,40 +125,41 @@
   @include('layouts.header', ['headerTitle' => 'Все проходы'])
 
   <div class="container">
-    <div class="nav-row">
-      <a href="{{ route('gallery') }}" class="btn btn-secondary">← Назад</a>
-      <input type="text" id="search-input" value="{{ $q ?? '' }}" class="search-bar" placeholder="Поиск по всем сотрудникам…">
-      <button id="apply-filters" type="button" class="btn btn-primary">Найти</button>
-    </div>
-
-    @if(count($photos))
-    <div class="filters-row">
-      <label for="photos-sort">Сортировать фото:</label>
-      <select id="photos-sort">
-        <option value="date-desc" selected>Новые→Старые</option>
-        <option value="date-asc">Старые→Новые</option>
-        <option value="az">А→Я</option>
-        <option value="za">Я→А</option>
-      </select>
-
-      <label for="photo-type">Тип:</label>
-      <select id="photo-type">
-        <option value="all">Все</option>
-        <option value="in">Вход</option>
-        <option value="out">Выход</option>
-      </select>
-
-      <div class="dt">
-        <label for="date-from">С:</label>
-        <input type="text" id="date-from" class="dt-picker" value="{{ $from ?? '' }}" placeholder="YYYY-MM-DD HH:MM:SS" readonly>
-
-        <label for="date-to">По:</label>
-        <input type="text" id="date-to" class="dt-picker" value="{{ $to ?? '' }}" placeholder="YYYY-MM-DD HH:MM:SS" readonly>
+    <form id="all-passages-filters" method="GET" action="{{ route('all.passages') }}">
+      <div class="nav-row">
+        <a href="{{ route('gallery') }}" class="btn btn-secondary">← Назад</a>
+        <input type="text" id="search-input" name="q" value="{{ $q ?? '' }}" class="search-bar" placeholder="Поиск по всем сотрудникам…">
+        <button type="submit" class="btn btn-primary">Найти</button>
       </div>
 
-      <button id="reset-filters" type="button" class="btn btn-primary">Сбросить</button>
-    </div>
+      <div class="filters-row">
+        <label for="photos-sort">Сортировать фото:</label>
+        <select id="photos-sort" name="photo_sort" data-server-filter>
+          <option value="date-desc" @selected(($photoSort ?? 'date-desc') === 'date-desc')>Новые→Старые</option>
+          <option value="date-asc" @selected(($photoSort ?? 'date-desc') === 'date-asc')>Старые→Новые</option>
+          <option value="az" @selected(($photoSort ?? 'date-desc') === 'az')>А→Я</option>
+          <option value="za" @selected(($photoSort ?? 'date-desc') === 'za')>Я→А</option>
+        </select>
 
+        <label for="photo-type">Тип:</label>
+        <select id="photo-type" name="photo_type" data-server-filter>
+          <option value="all" @selected(($photoType ?? 'all') === 'all')>Все</option>
+          <option value="in" @selected(($photoType ?? 'all') === 'in')>Вход</option>
+          <option value="out" @selected(($photoType ?? 'all') === 'out')>Выход</option>
+        </select>
+
+        <div class="dt">
+          <label for="date-from">С:</label>
+          <input type="text" id="date-from" name="from" class="dt-picker" value="{{ $from ?? '' }}" placeholder="YYYY-MM-DD HH:MM:SS" readonly data-server-filter>
+
+          <label for="date-to">По:</label>
+          <input type="text" id="date-to" name="to" class="dt-picker" value="{{ $to ?? '' }}" placeholder="YYYY-MM-DD HH:MM:SS" readonly data-server-filter>
+        </div>
+
+        <a href="{{ route('all.passages') }}" class="btn btn-primary">Сбросить</a>
+      </div>
+    </form>
+    @if(count($photos))
     <div id="photos-grid" class="grid">
       @foreach ($photos as $p)
       @php
@@ -180,18 +186,29 @@
               }
           }
 
-          $fio = trim((string)($p->PersonFio ?? ''));
+          $photoPath = str_replace('\\', '/', (string)($p->CameraPhoto ?? ''));
+          $isCardNotFound = (bool) preg_match('~(?:^|/)CardNotFound(?:/|$)~i', $photoPath);
+          $fio = $isCardNotFound ? 'Карта не найдена' : trim((string)($p->PersonFio ?? ''));
           if ($fio === '') {
-              $fio = (string)($p->PersonId ?? '');
+              $fio = (string)($p->PersonId ?? 'Не определён');
+              if ($fio === '') {
+                  $fio = 'Не определён';
+              }
           }
-
           $caption = trim(($displayType ? ($displayType . ' ') : '') . $displayDate);
           if (!empty($p->Point)) {
               $caption .= ' · ' . trim((string)$p->Point);
           }
 
-          $url         = buildPhotoUrl($httpBaseUrl ?? '', $p->CameraPhoto) . ($timestamp ? "?v={$timestamp}" : '');
-          $notFoundUrl = rtrim((string)($notFoundUrl ?? ''), '/') . '?v=' . time();
+          $notFoundBase = (string)($notFoundUrl ?? '');
+          $notFoundUrl = str_starts_with($notFoundBase, 'data:')
+              ? $notFoundBase
+              : rtrim($notFoundBase, '/') . '?v=' . time();
+
+          $builtUrl = buildPhotoUrl($httpBaseUrl ?? '', $p->CameraPhoto);
+          $url = $builtUrl === ''
+              ? $notFoundUrl
+              : $builtUrl . ($timestamp ? "?v={$timestamp}" : '');
       @endphp
 
         <div class="card"
@@ -215,13 +232,17 @@
       <p>Фото проходов не найдены.</p>
     @endif
 
-    @if(method_exists($photos, 'links'))
+    @if(method_exists($photos, 'nextPageUrl'))
       <div style="margin:1rem 0;">
-        {{ $photos->onEachSide(1)->links() }}
+        @include('pagination.passages-cursor', ['paginator' => $photos])
       </div>
     @endif
 
     <button id="back-to-top" aria-label="Наверх">↑</button>
+  </div>
+
+  <div id="search-loading" class="search-loading" hidden role="status" aria-live="polite" aria-label="Идёт поиск фото">
+    <div class="search-loading__panel">Идёт поиск фото…<br><small>При большом периоде это может занять некоторое время.</small></div>
   </div>
 
   <script>
@@ -238,141 +259,15 @@
   </script>
 
   <script>
-  document.addEventListener('DOMContentLoaded', () => {
-    const photoSort    = document.getElementById('photos-sort');
-    const photoType    = document.getElementById('photo-type');
-    const dateFrom     = document.getElementById('date-from');
-    const dateTo       = document.getElementById('date-to');
-    const globalSearch = document.getElementById('search-input');
-    const applyBtn     = document.getElementById('apply-filters');
-    const resetBtn     = document.getElementById('reset-filters');
-    const photosGrid   = document.getElementById('photos-grid');
-    const allPassagesUrl = @json(route('all.passages'));
+    document.addEventListener('DOMContentLoaded', () => {
+      const form = document.getElementById('all-passages-filters');
+      const overlay = document.getElementById('search-loading');
+      if (!form || !overlay) return;
 
-    if (!photosGrid || !photoSort || !photoType) return;
-
-    const urlParams = new URLSearchParams(window.location.search);
-    const initialSort = (urlParams.get('photo_sort') || '').toLowerCase();
-    const initialType = (urlParams.get('photo_type') || '').toLowerCase();
-
-    if (['date-desc', 'date-asc', 'az', 'za'].includes(initialSort)) {
-      photoSort.value = initialSort;
-    }
-    if (['all', 'in', 'out'].includes(initialType)) {
-      photoType.value = initialType;
-    }
-
-    function buildServerUrl() {
-      const params = new URLSearchParams(window.location.search);
-
-      const q = (globalSearch?.value || '').trim();
-      const from = dateFrom?.value || '';
-      const to = dateTo?.value || '';
-      const sort = photoSort?.value || 'date-desc';
-      const type = photoType?.value || 'all';
-
-      if (q) params.set('q', q); else params.delete('q');
-      if (from) params.set('from', from); else params.delete('from');
-      if (to) params.set('to', to); else params.delete('to');
-      if (sort !== 'date-desc') params.set('photo_sort', sort); else params.delete('photo_sort');
-      if (type !== 'all') params.set('photo_type', type); else params.delete('photo_type');
-
-      params.delete('page');
-
-      const qs = params.toString();
-      return qs ? `${allPassagesUrl}?${qs}` : allPassagesUrl;
-    }
-
-    function applyServerFilters() {
-      const nextUrl = buildServerUrl();
-      const currentUrl = `${window.location.origin}${window.location.pathname}${window.location.search}`;
-      if (nextUrl === currentUrl) return;
-      window.location.assign(nextUrl);
-    }
-
-    function applyAllFiltersByButton() {
-      applyFilters();
-      applyServerFilters();
-    }
-
-    function toYmdHis(v) {
-      if (!v) return '';
-      return v.replace(/[-:\s]/g, '');
-    }
-
-    function applyFilters() {
-      const typeFilter = photoType.value;
-      const fromTs = toYmdHis(dateFrom?.value || '');
-      const toTs   = toYmdHis(dateTo?.value || '');
-      const cards = Array.from(photosGrid.querySelectorAll('.card'));
-
-      for (const card of cards) {
-        let show = true;
-        if (typeFilter !== 'all') {
-          show = show && (card.getAttribute('data-type') === typeFilter);
-        }
-
-        const cardTs = card.getAttribute('data-timestamp') || '';
-        if ((fromTs || toTs) && !cardTs) show = false;
-        if (fromTs && cardTs && cardTs < fromTs) show = false;
-        if (toTs && cardTs && cardTs > toTs) show = false;
-
-        card.style.display = show ? '' : 'none';
-      }
-      sortPhotos();
-    }
-
-    function sortPhotos() {
-      const mode  = photoSort.value;
-      const cards = Array.from(photosGrid.querySelectorAll('.card'))
-                         .filter(c => c.style.display !== 'none');
-
-      cards.sort((a, b) => {
-        if (mode === 'az' || mode === 'za') {
-          const ta = (a.querySelector('.name')?.textContent || '').trim().toLowerCase();
-          const tb = (b.querySelector('.name')?.textContent || '').trim().toLowerCase();
-          return mode === 'za'
-            ? tb.localeCompare(ta, 'ru')
-            : ta.localeCompare(tb, 'ru');
-        }
-
-        const ta = a.getAttribute('data-timestamp') || '';
-        const tb = b.getAttribute('data-timestamp') || '';
-        return mode === 'date-asc'
-          ? ta.localeCompare(tb)
-          : tb.localeCompare(ta);
+      form.addEventListener('submit', () => {
+        overlay.hidden = false;
       });
-
-      cards.forEach(c => photosGrid.appendChild(c));
-    }
-
-    function resetFilters() {
-      photoSort.value = 'date-desc';
-      photoType.value = 'all';
-      if (dateFrom) dateFrom.value = '';
-      if (dateTo)   dateTo.value   = '';
-      if (globalSearch) globalSearch.value = '';
-
-      const hasServerFilters = new URLSearchParams(window.location.search).toString().length > 0;
-      if (hasServerFilters) {
-        window.location.assign(allPassagesUrl);
-        return;
-      }
-
-      applyFilters();
-    }
-
-    if (applyBtn) applyBtn.addEventListener('click', applyAllFiltersByButton);
-    if (globalSearch) globalSearch.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        applyAllFiltersByButton();
-      }
     });
-    if (resetBtn) resetBtn.addEventListener('click', resetFilters);
-
-    applyFilters();
-  });
   </script>
 
   <script src="{{ asset('vendor/flatpickr/flatpickr.min.js') }}"></script>

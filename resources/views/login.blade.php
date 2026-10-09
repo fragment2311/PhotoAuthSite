@@ -82,7 +82,7 @@
     @error('login')   <div class="error">{{ $message }}</div> @enderror
     @error('password')<div class="error">{{ $message }}</div> @enderror
 
-    <form method="POST" action="{{ route('login') }}">
+    <form method="POST" action="{{ route('login', [], false) }}">
         @csrf
         <input type="text" name="login" placeholder="Логин" value="{{ old('login') }}" required autofocus>
         <input type="password" name="password" placeholder="Пароль" required>

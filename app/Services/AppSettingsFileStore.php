@@ -27,6 +27,14 @@ class AppSettingsFileStore
                 } catch (\Throwable $e) {
                     // если в файле мусор — лучше не падать админке
                     $data[$k] = '';
+
+                    app(ErrorNotificationService::class)->log('warning', 'Ошибка расшифровки значения settings.json', [
+                        'key' => $k,
+                        'error' => $e->getMessage(),
+                        'file' => $e->getFile(),
+                        'line' => $e->getLine(),
+                        'exception' => $e,
+                    ]);
                 }
             }
         }

@@ -102,6 +102,38 @@
     font-size: 14px;
     line-height: 1.2;
   }
+
+  /* Select2: размеры как у остальных полей фильтров */
+  #passage-filters-form .select2-container {
+    width: 320px !important;
+    min-width: 320px !important;
+  }
+
+  #passage-filters-form .select2-selection--single {
+    height: 30px !important;
+    min-height: 30px !important;
+  }
+
+  #passage-filters-form .select2-selection__rendered {
+    line-height: 28px !important;
+    padding-left: 8px !important;
+    padding-right: 24px !important;
+  }
+
+  #passage-filters-form .select2-selection__arrow {
+    height: 28px !important;
+    top: 1px !important;
+  }
+
+  /* Сам выпадающий список по ширине равен полю */
+  .select2-container--open .select2-dropdown {
+    width: 320px !important;
+  }
+
+  /* Высота списка ближе к стандартному восприятию фильтров */
+  .select2-container--default .select2-results > .select2-results__options {
+    max-height: 260px !important;
+  }
 </style>
 
 <head>
@@ -112,11 +144,14 @@
 
   {{-- ваши стили шапки --}}
 <link rel="stylesheet" href="{{ asset('css/header-buttons.css') }}?v={{ filemtime(public_path('css/header-buttons.css')) }}">
+<link rel="stylesheet" href="{{ asset('vendor/flatpickr/flatpickr.min.css') }}">
+<link rel="stylesheet" href="{{ asset('css/datetime-picker.css') }}">
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 </head>
 <body>
 
   {{-- шапка шаблоном --}}
-@include('layouts.header', ['headerTitle' => 'Галерея'])
+@include('layouts.header', ['headerTitle' => 'Галерея - Проходы сотрудников'])
 
 @if(!empty($licenseBanner['show']))
   <div style="
@@ -134,22 +169,41 @@
 
 
   <div style="padding: 16px;">
-    <h2 style="margin: 0 0 12px 0;">Проходы сотрудников</h2>
 
     {{-- Фильтры --}}
-    <form method="GET" action="{{ route('passage.index') }}"
+    <form id="passage-filters-form" method="GET" action="{{ route('passage.index') }}"
           style="display:flex; gap:12px; flex-wrap:wrap; align-items:end; margin-bottom:12px;">
       <div>
         <label>С</label><br>
-        <input type="date" name="from" value="{{ $filters['from'] ?? '' }}">
+        <input
+          type="text"
+          id="passage-date-from"
+          name="from"
+          class="dt-picker"
+          data-enable-time="0"
+          data-date-format="Y-m-d"
+          value="{{ ($filters['from'] ?? '') ?: now()->startOfMonth()->toDateString() }}"
+          placeholder="YYYY-MM-DD"
+          readonly
+        >
       </div>
       <div>
         <label>По</label><br>
-        <input type="date" name="to" value="{{ $filters['to'] ?? '' }}">
+        <input
+          type="text"
+          id="passage-date-to"
+          name="to"
+          class="dt-picker"
+          data-enable-time="0"
+          data-date-format="Y-m-d"
+          value="{{ ($filters['to'] ?? '') ?: now()->endOfMonth()->toDateString() }}"
+          placeholder="YYYY-MM-DD"
+          readonly
+        >
       </div>
 <div>
   <label>Подразделение</label><br>
-  <select name="department">
+  <select id="department-select" name="department" class="js-select2-filter" style="width: 320px;">
     <option value="">Все</option>
     @foreach(($departments ?? []) as $dep)
       <option value="{{ $dep }}" @selected(($filters['department'] ?? '') === $dep)>{{ $dep }}</option>
@@ -159,7 +213,7 @@
 
 <div>
   <label>Должность</label><br>
-  <select name="position">
+  <select id="position-select" name="position" class="js-select2-filter" style="width: 320px;">
     <option value="">Все</option>
     @foreach(($positions ?? []) as $pos)
       <option value="{{ $pos }}" @selected(($filters['position'] ?? '') === $pos)>{{ $pos }}</option>
@@ -191,11 +245,12 @@
       {{-- сохраняем сортировку при фильтрах --}}
       <input type="hidden" name="sort" value="{{ $filters['sort'] ?? '' }}">
       <input type="hidden" name="dir" value="{{ $filters['dir'] ?? '' }}">
+      <input type="hidden" name="applied" value="1">
     </form>
 
 
 @if(!empty($canDownloadReport))
-  <a class="ui-btn is-primary is-sm"
+  <a id="passage-export-excel" class="ui-btn is-primary is-sm"
      href="{{ route('admin.passages.export', request()->query()) }}">
     Скачать Excel
   </a>
@@ -214,8 +269,8 @@
         <thead>
           <tr style="background:#f3f4f6;">
             @php
-              $sort = $filters['sort'] ?? 'AccessTime';
-              $dir  = $filters['dir'] ?? 'desc';
+              $sort = $filters['sort'] ?? 'fio';
+              $dir  = $filters['dir'] ?? 'asc';
 
               $mk = function($key, $title) use ($filters, $sort, $dir) {
                 $nextDir = ($sort === $key && $dir === 'asc') ? 'desc' : 'asc';
@@ -226,10 +281,9 @@
             @endphp
 
 <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb;">{!! $mk('fio','ФИО') !!}</th>
-<th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb;">{!! $mk('plant','Завод') !!}</th>
 <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb;">{!! $mk('department','Подразделение') !!}</th>
 <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb;">{!! $mk('position','Должность') !!}</th>
-<th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb;">{!! $mk('worked_hours','Отработано, ч') !!}</th>
+<th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb;">{!! $mk('worked_hours','Итог за период, ч') !!}</th>
           </tr>
         </thead>
 
@@ -237,15 +291,16 @@
 @forelse($rows as $r)
   <tr>
     <td style="padding:10px; border-bottom:1px solid #f1f5f9;">{{ $r['fio'] }}</td>
-    <td style="padding:10px; border-bottom:1px solid #f1f5f9;">{{ $r['plant'] ?? '—' }}</td>
     <td style="padding:10px; border-bottom:1px solid #f1f5f9;">{{ $r['department'] }}</td>
     <td style="padding:10px; border-bottom:1px solid #f1f5f9;">{{ $r['position'] }}</td>
     <td style="padding:10px; border-bottom:1px solid #f1f5f9;">{{ $r['worked_hours'] }}</td>
   </tr>
 @empty
-  <tr>
-    <td colspan="5" style="padding:14px;">Нет данных за выбранный период.</td>
-  </tr>
+  @if(($filters['applied'] ?? '0') === '1')
+    <tr>
+      <td colspan="4" style="padding:14px;">Нет данных за выбранный период.</td>
+    </tr>
+  @endif
 @endforelse
         </tbody>
       </table>
@@ -271,4 +326,68 @@
   </div>
 
 </body>
+<script src="{{ asset('vendor/flatpickr/flatpickr.min.js') }}"></script>
+<script src="{{ asset('js/datetime-picker.js') }}"></script>
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    initDateTimePickers('.dt-picker');
+
+    const form = document.getElementById('passage-filters-form');
+    if (!form) return;
+
+    if (window.jQuery && window.jQuery.fn && window.jQuery.fn.select2) {
+      const matcher = function(params, data) {
+        const term = (params.term || '').toString().toLowerCase().trim();
+
+        if (term === '') {
+          return data;
+        }
+
+        if (!data.text) {
+          return null;
+        }
+
+        const words = data.text
+          .toString()
+          .toLowerCase()
+          .replace(/\s+/g, ' ')
+          .trim()
+          .split(' ')
+          .filter(Boolean);
+
+        const tokens = term
+          .split(' ')
+          .filter(Boolean);
+
+        const ok = tokens.every((token) => words.some((word) => word.includes(token)));
+        return ok ? data : null;
+      };
+
+      window.jQuery('.js-select2-filter').select2({
+        width: 'resolve',
+        matcher,
+        minimumResultsForSearch: 0,
+        placeholder: 'Выберите значение'
+      });
+    }
+
+    const applyBtn = form.querySelector('button[type="submit"]');
+    if (!applyBtn) return;
+
+    const exportBtn = document.getElementById('passage-export-excel');
+    if (exportBtn) {
+      exportBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+
+        const baseUrl = exportBtn.getAttribute('href').split('?')[0];
+        const currentParams = new URLSearchParams(window.location.search);
+        const finalUrl = currentParams.toString() ? `${baseUrl}?${currentParams.toString()}` : baseUrl;
+
+        window.location.href = finalUrl;
+      });
+    }
+  });
+</script>
 </html>

@@ -99,6 +99,21 @@
       max-height: 100%;
       object-fit: contain;
     }
+    .storage-state {
+      margin: 0 0 1rem;
+      padding: .85rem 1rem;
+      border-radius: 8px;
+      border: 1px solid #f59e0b;
+      background: #fff7ed;
+      color: #92400e;
+      line-height: 1.35;
+    }
+    .storage-state__reason {
+      margin-top: .35rem;
+      font-size: .95rem;
+      opacity: .85;
+      word-break: break-word;
+    }
     .no-photo { display:flex; align-items:center; justify-content:center; width:100%; height:100%; background:#f9f9f9; }
     .no-photo img { max-width: 100%; max-height: 100%; object-fit: contain; }
     .staff-photo { max-width:100%; max-height:100%; object-fit:contain; transition:transform .3s ease; }
@@ -155,12 +170,40 @@
       <input type="text" id="search-input" class="search-bar" placeholder="Поиск…">
     </div>
 
+    @if(!empty($storageUnavailable))
+      @php
+        $storageReasonMap = [
+          'empty_photo_storage_host' => 'Не задан адрес фото-хранилища в настройках.',
+          'photo_storage_probe_exception' => 'Ошибка сетевого соединения с фото-хранилищем.',
+        ];
+
+        $storageReasonText = $storageReasonMap[$storageUnavailableReason ?? '']
+          ?? 'Фото-хранилище не ответило корректно.';
+
+        if (is_string($storageUnavailableReason ?? '') && str_starts_with((string) $storageUnavailableReason, 'photo_storage_probe_http_')) {
+          $statusCode = (string) str_replace('photo_storage_probe_http_', '', (string) $storageUnavailableReason);
+          if ($statusCode !== '') {
+            $storageReasonText = 'Фото-хранилище вернуло неожиданный HTTP-статус: ' . $statusCode . '.';
+          }
+        }
+      @endphp
+      <div class="storage-state">
+        Фото-хранилище временно недоступно. Галерея открыта в безопасном пустом режиме.
+        @if(!empty($storageUnavailableReason))
+          <div class="storage-state__reason">Причина: {{ $storageReasonText }}</div>
+          @if((bool) config('app.debug', false))
+            <div class="storage-state__reason">Технический код: {{ $storageUnavailableReason }}</div>
+          @endif
+        @endif
+      </div>
+    @endif
+
 
 
    {{-- Папки --}}
 @if(count($items) && !$isShbfOrLkSubfolder)
 
-  @if($dir === $base && !($rootSectionsMatchCurrent ?? true))
+  @if($dir === $base && !($rootSectionsMatchCurrent ?? true) && empty($storageUnavailable))
     <div class="help" style="margin:0 0 .75rem;color:#b45309;">
       В корневой папке не найдены каталоги, совпадающие с активными точками из пар устройств.
     </div>
@@ -180,7 +223,7 @@
     {{-- НОВАЯ КНОПКА рядом с SHBF/LK: показываем только в корне --}}
     @if($dir === $base)
       <div class="card" data-folder="0-all-passages">
-        <a href="{{ route('all.passages') }}" class="folder-link">
+        <a href="{{ route('all.passages') }}" class="folder-link all-passages-link">
           📁 Все проходы
         </a>
       </div>
@@ -297,8 +340,11 @@
             $timestamp   = sprintf('%04d%02d%02d%02d%02d%02d', $y, $mn, $d, $h, $i, $s);
         }
 
-        $url         = "{$httpBaseUrl}/" . ltrim("$dir/$name", '/') . "?v={$timestamp}";
-        $notFoundUrl = rtrim((string)($notFoundUrl ?? ''), '/') . '?v=' . time();
+        $url = "{$httpBaseUrl}/" . ltrim("$dir/$name", '/') . "?v={$timestamp}";
+        $notFoundBase = (string) ($notFoundUrl ?? '');
+        $notFoundUrl = str_starts_with($notFoundBase, 'data:')
+            ? $notFoundBase
+            : rtrim($notFoundBase, '/') . '?v=' . time();
     @endphp
 
       <div class="card"
@@ -318,6 +364,7 @@
       </div>
     @endforeach
     </div>
+    {{ $photos->onEachSide(1)->links('pagination.passages') }}
     @endif
 
     <button id="back-to-top" aria-label="Наверх">↑</button>
@@ -332,6 +379,30 @@
     });
     btn.addEventListener('click', () => {
       window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  });
+</script>
+
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.all-passages-link').forEach((link) => {
+      link.addEventListener('click', () => {
+        const overlay = document.createElement('div');
+        overlay.setAttribute('role', 'status');
+        overlay.setAttribute('aria-live', 'polite');
+        overlay.textContent = 'Идёт поиск фото…';
+        Object.assign(overlay.style, {
+          position: 'fixed', inset: '0', zIndex: '2000', display: 'flex',
+          alignItems: 'center', justifyContent: 'center', background: 'rgba(15, 23, 42, .42)',
+          color: '#111827', fontSize: '1.1rem', fontWeight: '600'
+        });
+        const panel = document.createElement('div');
+        panel.textContent = overlay.textContent;
+        overlay.textContent = '';
+        Object.assign(panel.style, { background: '#fff', borderRadius: '12px', padding: '1.25rem 1.5rem', boxShadow: '0 18px 50px rgba(0,0,0,.25)' });
+        overlay.appendChild(panel);
+        document.body.appendChild(overlay);
+      }, { once: true });
     });
   });
 </script>

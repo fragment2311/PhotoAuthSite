@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Exceptions\UserVisibleException;
 use App\Http\Controllers\Controller;
 use App\Services\BootstrapConfigService;
 use App\Services\LicenseService;
@@ -12,6 +13,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use App\Services\AppSettingsFileStore;
 use RuntimeException;
+use Throwable;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class SettingsController extends Controller
 {
@@ -51,7 +54,18 @@ public function index(
             abort(403);
         }
 
-        $this->validateAndSaveSettings($request, $store);
+        try {
+            $this->validateAndSaveSettings($request, $store);
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (Throwable $e) {
+            throw new UserVisibleException(
+                'Не удалось сохранить настройки. Проверьте корректность введённых данных и доступ к файлам.',
+                null,
+                422,
+                $e
+            );
+        }
 
         return back()->with('ok', 'Настройки сохранены');
     }
@@ -62,6 +76,7 @@ public function index(
 
         return response()->view('admin.settings.setup_auth', [
             'masterEnabled' => $bootstrapConfig->hasMasterPassword(),
+            'masterLogin' => $bootstrapConfig->getMasterLogin(),
         ]);
     }
 
@@ -78,26 +93,18 @@ public function index(
             return back()->withErrors(['password' => 'Введите пароль'])->withInput();
         }
 
-        if ($login !== '') {
-            if ($this->tryAdminAuth($login, $password)) {
-                $request->session()->put('setup_access_granted', true);
-                return redirect()->route('setup.settings');
-            }
-
-            return back()
-                ->withErrors(['login' => 'Неверный логин или пароль администратора'])
-                ->with('err', 'Неверный логин или пароль администратора')
-                ->withInput();
+        if ($bootstrapConfig->verifyMasterCredentials($login, $password)) {
+            $request->session()->put('setup_access_granted', true);
+            return redirect()->route('setup.settings');
         }
 
-        if ($bootstrapConfig->verifyMasterPassword($password)) {
+        if ($login !== '' && $this->tryAdminAuth($login, $password)) {
             $request->session()->put('setup_access_granted', true);
             return redirect()->route('setup.settings');
         }
 
         return back()
-            ->withErrors(['password' => 'Неверный мастер-пароль'])
-            ->with('err', 'Неверный мастер-пароль')
+            ->withErrors(['login' => 'Неверный логин или пароль'])
             ->withInput();
     }
 
@@ -180,18 +187,45 @@ public function index(
         ]);
     }
 
-    public function save(Request $request, AppSettingsFileStore $store)
+public function save(Request $request, AppSettingsFileStore $store)
 {
-    $this->validateAndSaveSettings($request, $store);
+    try {
+        $this->validateAndSaveSettings($request, $store);
+    } catch (ValidationException $e) {
+        throw $e;
+    } catch (Throwable $e) {
+        throw new UserVisibleException(
+            'Не удалось сохранить настройки. Проверьте корректность введённых данных и доступ к файлам.',
+            null,
+            422,
+            $e
+        );
+    }
 
     return back()->with('ok', 'Настройки сохранены');
 }
+
+    public function downloadLicenseLog(): BinaryFileResponse
+    {
+        $path = (string) config('license.log_path', storage_path('logs/license.log'));
+
+        if (!is_file($path) || !is_readable($path)) {
+            abort(404, 'Файл лога лицензии не найден');
+        }
+
+        return response()->download($path, 'license.log', [
+            'Content-Type' => 'text/plain; charset=UTF-8',
+        ]);
+    }
 
     private function validateAndSaveSettings(Request $request, AppSettingsFileStore $store): void
 {
     $existing = $store->loadDecrypted();
 
     $data = $request->validate([
+        // Лицензия
+        'license_client_id' => 'nullable|string|max:255',
+
         // DB
         'db_host' => 'nullable|string',
         'db_port' => 'nullable|string',
@@ -230,12 +264,21 @@ public function index(
         'photo_path' => 'nullable|string',
 
         // setup master password
+        'setup_master_login' => 'nullable|string|min:3|max:200',
         'setup_master_password' => 'nullable|string|min:6|max:255',
         'setup_master_password_confirmation' => 'nullable|string',
 
-        // Отправка отчётов ошибок
-        'allow_error_reports' => 'nullable|in:0,1',
     ]);
+
+    $masterLogin = trim((string) $request->input('setup_master_login', ''));
+    if ($masterLogin !== '') {
+        $data['setup_master_login'] = $masterLogin;
+    } else {
+        $existingLogin = trim((string) ($existing['setup_master_login'] ?? ''));
+        if ($existingLogin !== '') {
+            $data['setup_master_login'] = $existingLogin;
+        }
+    }
 
     $masterPassword = (string) $request->input('setup_master_password', '');
     if ($masterPassword !== '') {
@@ -275,21 +318,18 @@ public function index(
 
     unset($data['photos_not_found_upload']);
 
-    // Чекбокс: при отсутствии в запросе считаем выключенным
-    $data['allow_error_reports'] = $request->boolean('allow_error_reports') ? '1' : '0';
-
     // важно: пустые поля паролей НЕ затирают существующие
     $store->save($data, keepEncryptedSecrets: true);
 }
 
     public function devicePairsApiToken()
     {
-        $token = (string) env('DEVICE_PAIRS_API_TOKEN', '');
+        $token = (string) env('API_TOKEN', '');
 
         if ($token === '') {
             return response()->json([
                 'ok' => false,
-                'message' => 'DEVICE_PAIRS_API_TOKEN не задан',
+                'message' => 'API_TOKEN не задан',
             ], 404);
         }
 
@@ -423,11 +463,11 @@ public function index(
     private function generateAndPersistDevicePairsApiToken(): string
     {
         $token = bin2hex(random_bytes(32));
-        $this->writeEnvValue('DEVICE_PAIRS_API_TOKEN', $token);
+        $this->writeEnvValue('API_TOKEN', $token);
 
-        putenv('DEVICE_PAIRS_API_TOKEN=' . $token);
-        $_ENV['DEVICE_PAIRS_API_TOKEN'] = $token;
-        $_SERVER['DEVICE_PAIRS_API_TOKEN'] = $token;
+        putenv('API_TOKEN=' . $token);
+        $_ENV['API_TOKEN'] = $token;
+        $_SERVER['API_TOKEN'] = $token;
 
         return $token;
     }

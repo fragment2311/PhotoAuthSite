@@ -24,18 +24,6 @@
       min-height: 100vh;
       font-size: 22px;
     }
-    header {
-      background: var(--card);
-      padding: 1rem 2rem;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    header h1 {
-      font-size: 2rem;
-      margin: 0;
-    }
     .btn {
       padding: 0.7rem 1.4rem;
       border: none;
@@ -49,6 +37,7 @@
       transition: background .2s;
       color: #fff;
     }
+    .user-form-container .btn { margin-left: 0; }
     .btn-primary {
       background: var(--link);
     }
@@ -57,6 +46,7 @@
     }
     .btn-success {
       background: var(--success);
+      width: 120px;
     }
     .btn-success:hover {
       background: var(--success-hover);
@@ -67,13 +57,14 @@
     .btn-danger:hover {
       background: var(--danger-hover);
     }
-    .container {
-      max-width: 600px;
+    .user-form-container {
+      width: min(100%, 760px);
       margin: 2rem auto;
-      padding: 0 2rem;
+      padding: 1rem 2rem;
       background: var(--card);
       border-radius: 6px;
       box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      position: relative;
     }
     form div { margin-bottom: 1rem; }
     label {
@@ -100,7 +91,21 @@
       font-size: .9rem;
       margin-top: .3rem;
     }
+
+    .last-change-inline {
+      margin-top: 0;
+      margin-bottom: 10px;
+      font-size: 13px;
+      color: #4b5563;
+      text-align: right;
+      line-height: 1.35;
+    }
+
+    @media (max-width: 640px) {
+      .last-change-inline { text-align: left; }
+    }
   </style>
+  <link rel="stylesheet" href="{{ asset('css/header-buttons.css') }}">
 </head>
 <body>
   @php use Illuminate\Support\Facades\Auth; @endphp
@@ -108,24 +113,9 @@
     $galleryRootDir = trim((string) config('app.gallery_root_dir', config('app.gallery_root_dir_default', '')), '/');
   @endphp
 
-  <header>
-    <h1>
-      <a href="{{ route('gallery', ['dir' => $galleryRootDir]) }}"
-         style="text-decoration:none;color:inherit;">
-        FTP-Галерея
-      </a>
-    </h1>
-    <div>
-      <a href="{{ route('gallery', ['dir' => $galleryRootDir]) }}" class="btn btn-primary">Галерея</a>
-      <a href="{{ route('admin.users') }}" class="btn btn-primary">К списку</a>
-      <form method="POST" action="{{ route('logout') }}" style="display:inline">
-        @csrf
-        <button type="submit" class="btn btn-danger">Выйти</button>
-      </form>
-    </div>
-  </header>
+  @include('layouts.header', ['headerTitle' => 'FTP-Галерея'])
 
-  <div class="container">
+  <div class="user-form-container">
     @if(session('status'))
       <div class="status">{{ session('status') }}</div>
     @endif
@@ -164,8 +154,11 @@
         <input type="password" id="password_confirmation" name="password_confirmation">
       </div>
 
+          @include('partials.last_change_card', ['lastChange' => $lastChange ?? null])
       <button type="submit" class="btn btn-success">Сохранить</button>
     </form>
+
+
   </div>
 </body>
 </html>

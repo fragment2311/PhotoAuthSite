@@ -22,60 +22,65 @@
       --danger-hover: #c82333;
     }
     * { box-sizing: border-box; }
- 
 
-    header h1 {
-      font-size: 2rem; margin: 0;
+    .btn {
+      padding: 0.7rem 1.4rem;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-block;
+      text-align: center;
+      font-size: 1.1rem;
+      margin-left: .5rem;
+      transition: background .2s;
+      color: #fff;
     }
+    .user-form-container .btn { margin-left: 0; }
 
-    
+    .user-form-container {
+      width: min(100%, 760px);
+      margin: 2rem auto;
+      padding: 1rem 2rem;
+      background: var(--card);
+      border-radius: 6px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      position: relative;
+    }
+    form div { margin-bottom: 1rem; }
+    label {
+      display: block;
+      margin-bottom: .3rem;
+      font-weight: 600;
+      font-size: 1rem;
+    }
+    input, select {
+      width: 100%;
+      padding: .6rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 1rem;
+    }
     .btn-success {
       background: var(--success);
+      width: 120px;
     }
     .btn-success:hover {
       background: var(--success-hover);
     }
-
-
-    .container {
-      width: 100%;
-      max-width: 800px;
-      margin: 1rem auto;
-      padding: 0 2rem;
-    }
-    .nav-back {
-      display: inline-block;
-      margin-bottom: 1rem;
-    }
-    .form-card {
-      background: var(--card);
-      border-radius: 6px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-      padding: 2rem;
-    }
-    .form-card h2 {
-      margin-top: 0; margin-bottom: 1.5rem;
-      font-size: 1.5rem; text-align: center;
-    }
-    .form-field {
-      width: 100%;
-      font-size: 1.1rem;
-      padding: 0.8rem 1rem;
-      border: 1px solid #bbb;
-      border-radius: 6px;
-      margin-bottom: 1rem;
-    }
     .status {
       color: var(--success);
-      text-align: center;
       margin-bottom: 1rem;
-      font-size: 1.2rem;
+      font-size: 1rem;
+      text-align: center;
     }
     .error {
       color: var(--danger);
-      text-align: center;
+      font-size: .9rem;
+      margin-top: .3rem;
+    }
+    .error-list {
       margin-bottom: 1rem;
-      font-size: 1rem;
     }
   </style>
   <link rel="stylesheet"
@@ -86,50 +91,34 @@
 
 @php use Illuminate\Support\Facades\Auth; @endphp
 
-@include('layouts.header', ['headerTitle' => 'Галерея-Проходы'])
+@include('layouts.header', ['headerTitle' => 'FTP-Галерея'])
 
 
-<div class="container">
-  <a href="{{ route('admin.users') }}" class="btn btn-primary nav-back">← Назад к списку</a>
+<div class="user-form-container">
+  @if(session('status'))
+    <div class="status">{{ session('status') }}</div>
+  @endif
 
-  <div class="form-card">
-    <h2>Новый пользователь</h2>
+  @if($errors->any())
+    <div class="error-list">
+      @foreach($errors->all() as $e)
+        <div class="error">{{ $e }}</div>
+      @endforeach
+    </div>
+  @endif
 
-    @if(session('status'))
-      <div class="status">{{ session('status') }}</div>
-    @endif
+  <form method="POST" action="{{ route('admin.register.post') }}">
+    @csrf
 
-    @if($errors->any())
-      <div class="error">
-        @foreach($errors->all() as $e)
-          <div>{{ $e }}</div>
-        @endforeach
-      </div>
-    @endif
+    <div>
+      <label for="login">Логин</label>
+      <input type="text" id="login" name="login" value="{{ old('login') }}" required autofocus>
+      @error('login')<div class="error">{{ $message }}</div>@enderror
+    </div>
 
-    <form method="POST" action="{{ route('admin.register.post') }}">
-      @csrf
-
-      <input type="text"
-             name="login"
-             class="form-field"
-             placeholder="Логин"
-             value="{{ old('login') }}"
-             required autofocus>
-
-      <input type="password"
-             name="password"
-             class="form-field"
-             placeholder="Пароль"
-             required>
-
-      <input type="password"
-             name="password_confirmation"
-             class="form-field"
-             placeholder="Повторите пароль"
-             required>
-
-      <select name="role_id" class="form-field" required>
+    <div>
+      <label for="role_id">Роль</label>
+      <select name="role_id" id="role_id" required>
         <option value="">— Выберите роль —</option>
         @foreach($roles as $role)
           <option value="{{ $role->ID }}" @selected(old('role_id') == $role->ID)>
@@ -137,12 +126,22 @@
           </option>
         @endforeach
       </select>
+      @error('role_id')<div class="error">{{ $message }}</div>@enderror
+    </div>
 
-      <button type="submit" class="btn btn-success" style="width:100%; margin-top:0.5rem;">
-        Создать
-      </button>
-    </form>
-  </div>
+    <div>
+      <label for="password">Пароль</label>
+      <input type="password" id="password" name="password" required>
+      @error('password')<div class="error">{{ $message }}</div>@enderror
+    </div>
+
+    <div>
+      <label for="password_confirmation">Подтверждение пароля</label>
+      <input type="password" id="password_confirmation" name="password_confirmation" required>
+    </div>
+
+    <button type="submit" class="btn btn-success">Создать</button>
+  </form>
 </div>
 
 </body>

@@ -6,6 +6,9 @@ use Illuminate\Database\Eloquent\Model;
 class Camera extends Model
 {
     protected $table = 'cameras';
+    protected $primaryKey = 'Id';
+    public $incrementing = true;
+    protected $keyType = 'int';
     public $timestamps = false;
 
     protected $fillable = [
@@ -92,11 +95,28 @@ class Camera extends Model
     // Связи с парами
     public function entryPairs()
     {
-        return $this->hasMany(PairDevice::class, 'Entry_camera_id');
+        return $this->hasManyThrough(
+            PairDevice::class,
+            PairDeviceMember::class,
+            'IdCamera',
+            'Id',
+            'Id',
+            'IdPairDevice'
+        );
     }
 
     public function exitPairs()
     {
-        return $this->hasMany(PairDevice::class, 'Exit_camera_id');
+        return $this->entryPairs();
+    }
+
+    public function pairMembers()
+    {
+        return $this->hasMany(PairDeviceMember::class, 'IdCamera', 'Id');
+    }
+
+    public function pairedWith()
+    {
+        return $this->entryPairs();
     }
 }

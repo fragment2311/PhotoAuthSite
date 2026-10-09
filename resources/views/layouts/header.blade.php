@@ -40,15 +40,20 @@
 
   <div class="app-menu__divider"></div>
 
-  <div class="app-menu__section">
-    <div class="app-menu__sectionTitle">Администрирование</div>
-    <div class="app-menu__grid">
-      <a href="{{ route('admin.devices.index') }}" class="btn btn-primary">Устройства</a>
-      <a href="{{ route('admin.users') }}" class="btn btn-primary">Список пользователей</a>
-      <a href="{{ route('admin.register') }}" class="btn btn-primary">Новый пользователь</a>
+    <div class="app-menu__section">
+      <div class="app-menu__sectionTitle">Администрирование</div>
+      <div class="app-menu__grid">
+        <a href="{{ route('admin.devices.index') }}" class="btn btn-primary">Устройства</a>
+        <a href="{{ route('admin.locations.index') }}" class="btn btn-primary">Локации</a>
+        <a href="{{ route('admin.users') }}" class="btn btn-primary">Список пользователей</a>
+        <a href="{{ route('admin.register') }}" class="btn btn-primary">Новый пользователь</a>
 
       @if (\Illuminate\Support\Facades\Route::has('admin.settings.index'))
         <a href="{{ route('admin.settings.index') }}" class="btn btn-primary">Настройки</a>
+      @endif
+
+      @if (\Illuminate\Support\Facades\Route::has('admin.logs.index'))
+        <a href="{{ route('admin.logs.index') }}" class="btn btn-primary">Журнал логов</a>
       @endif
     </div>
   </div>
@@ -201,6 +206,35 @@
     background: var(--danger-hover, #c82333) !important;
     border-color: var(--danger-hover, #c82333) !important;
   }
+
+  /* === Универсальная сортировка таблиц по клику на заголовок === */
+  table thead th[data-sortable="true"]{
+    cursor: pointer;
+    user-select: none;
+    position: relative;
+    padding-right: 24px;
+  }
+
+  table thead th[data-sortable="true"]::after{
+    content: '↕';
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 12px;
+    color: #9ca3af;
+    line-height: 1;
+  }
+
+  table thead th[data-sort-direction="asc"]::after{
+    content: '↑';
+    color: #2563eb;
+  }
+
+  table thead th[data-sort-direction="desc"]::after{
+    content: '↓';
+    color: #2563eb;
+  }
 </style>
 
 <script>
@@ -225,6 +259,108 @@
     menu.classList.remove('is-open');
     overlay.classList.remove('is-open');
   }
+
+  function parseSortableValue(rawValue) {
+    const text = String(rawValue ?? '').replace(/\u00a0/g, ' ').trim();
+
+    const dateMatch = text.match(/^(\d{2})\.(\d{2})\.(\d{4})(?:\s+(\d{2}):(\d{2})(?::(\d{2}))?)?$/);
+    if (dateMatch) {
+      const day = Number(dateMatch[1]);
+      const month = Number(dateMatch[2]) - 1;
+      const year = Number(dateMatch[3]);
+      const hour = Number(dateMatch[4] ?? 0);
+      const minute = Number(dateMatch[5] ?? 0);
+      const second = Number(dateMatch[6] ?? 0);
+      return { type: 'number', value: new Date(year, month, day, hour, minute, second).getTime() };
+    }
+
+    const normalizedNumber = text.replace(/\s+/g, '').replace(',', '.');
+    if (/^-?\d+(?:\.\d+)?$/.test(normalizedNumber)) {
+      return { type: 'number', value: Number(normalizedNumber) };
+    }
+
+    return { type: 'string', value: text.toLocaleLowerCase('ru-RU') };
+  }
+
+  function getCellSortText(cell) {
+    if (!cell) return '';
+    if (cell.dataset && cell.dataset.sortValue) return cell.dataset.sortValue;
+
+    const formControl = cell.querySelector('input, select, textarea');
+    if (formControl) return formControl.value ?? '';
+
+    return cell.textContent ?? '';
+  }
+
+  function initTableSorting() {
+    const collator = new Intl.Collator('ru', { numeric: true, sensitivity: 'base' });
+    const tables = document.querySelectorAll('table');
+
+    tables.forEach((table) => {
+      const thead = table.tHead;
+      const tbody = table.tBodies && table.tBodies[0];
+      if (!thead || !tbody || thead.rows.length === 0) return;
+
+      const headerRow = thead.rows[thead.rows.length - 1];
+      const headers = Array.from(headerRow.cells);
+
+      headers.forEach((th, columnIndex) => {
+        const title = (th.textContent || '').trim().toLowerCase();
+        const isActionsColumn = th.classList.contains('actions-cell') || title === 'действия';
+        if (isActionsColumn || th.dataset.sortable === 'false') return;
+
+        th.dataset.sortable = 'true';
+        th.setAttribute('role', 'button');
+        th.setAttribute('tabindex', '0');
+
+        const sortColumn = (event) => {
+          event.preventDefault();
+
+          const rows = Array.from(tbody.rows).filter((row) => row.cells.length > columnIndex);
+          if (rows.length < 2) return;
+
+          const nextDirection = th.dataset.sortDirection === 'asc' ? 'desc' : 'asc';
+
+          const prepared = rows.map((row, index) => {
+            const text = getCellSortText(row.cells[columnIndex]);
+            return { row, index, parsed: parseSortableValue(text) };
+          });
+
+          prepared.sort((a, b) => {
+            const first = a.parsed;
+            const second = b.parsed;
+            let result = 0;
+
+            if (first.type === 'number' && second.type === 'number') {
+              result = first.value - second.value;
+            } else {
+              result = collator.compare(String(first.value), String(second.value));
+            }
+
+            if (result === 0) {
+              result = a.index - b.index;
+            }
+
+            return nextDirection === 'asc' ? result : -result;
+          });
+
+          headers.forEach((headerCell) => delete headerCell.dataset.sortDirection);
+          th.dataset.sortDirection = nextDirection;
+
+          prepared.forEach((item) => tbody.appendChild(item.row));
+        };
+
+        th.addEventListener('click', sortColumn);
+        th.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            sortColumn(event);
+          }
+        });
+      });
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', initTableSorting);
 
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') closeSidebarMenu();

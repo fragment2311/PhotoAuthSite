@@ -66,7 +66,6 @@
 <div class="box">
     <h2>Вход</h2>
 
-    <div class="status">Для мастер-пароля оставьте поле «Логин» пустым.</div>
 
     @if(session('err'))
         <div class="error">{{ session('err') }}</div>
@@ -76,7 +75,7 @@
     @error('login')   <div class="error">{{ $message }}</div> @enderror
     @error('password')<div class="error">{{ $message }}</div> @enderror
 
-    <form method="POST" action="{{ route('setup.auth.submit') }}">
+    <form method="POST" action="{{ route('setup.auth.submit', [], false) }}">
         @csrf
         <input type="text" name="login" placeholder="Логин" value="{{ old('login') }}" autofocus>
         <input type="password" name="password" placeholder="Пароль" required>

@@ -1,5 +1,4 @@
 <?php
-file_put_contents(__DIR__.'/__hit.txt', date('c').PHP_EOL, FILE_APPEND);
 
 use Illuminate\Foundation\Application;
 use Illuminate\Http\Request;

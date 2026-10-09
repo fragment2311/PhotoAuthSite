@@ -1,0 +1,70 @@
+PhotoAuthApp — развёртывание на сервере
+
+1. Требования
+
+- Linux-сервер с Docker Engine и Docker Compose plugin.
+- Внешняя MySQL, доступная с сервера Docker.
+- Открытый входящий порт 27020 или настроенный reverse proxy.
+
+MySQL не запускается этим проектом. В параметрах базы укажите IP-адрес или DNS-имя внешнего сервера MySQL. Не используйте 127.0.0.1, если MySQL не находится внутри контейнера приложения.
+
+2. Первый запуск
+
+Перейдите в каталог проекта на сервере:
+
+  cd /opt/photoauthapp
+
+Создайте production-файл с настройками:
+
+  cp .env.example.production .env.production
+  nano .env.production
+
+Обязательно заполните в .env.production:
+
+- APP_URL — внешний адрес приложения.
+- REMOTE_DB_HOST, REMOTE_DB_PORT, REMOTE_DB_DATABASE, REMOTE_DB_USERNAME, REMOTE_DB_PASSWORD.
+- DB_HOST, DB_PORT, DB_DATABASE, DB_USERNAME, DB_PASSWORD — те же значения для совместимости.
+- APP_KEY — уникальный ключ приложения.
+
+Сгенерируйте APP_KEY и вставьте полученную строку после APP_KEY=:
+
+  php -r "echo 'base64:'.base64_encode(random_bytes(32)).PHP_EOL;"
+
+Проверьте конфигурацию:
+
+  docker compose --env-file .env.production -f compose.yaml config
+
+Соберите и запустите приложение:
+
+  docker compose --env-file .env.production -f compose.yaml up -d --build
+  docker compose --env-file .env.production -f compose.yaml ps
+
+Примените миграции базы данных:
+
+  docker compose --env-file .env.production -f compose.yaml exec app php artisan migrate --force
+
+Приложение будет доступно по адресу http://SERVER_IP:27020.
+
+3. Обновление
+
+  cd /opt/photoauthapp
+  git pull
+  docker compose --env-file .env.production -f compose.yaml up -d --build
+  docker compose --env-file .env.production -f compose.yaml exec app php artisan migrate --force
+  docker compose --env-file .env.production -f compose.yaml ps
+
+Запускайте migrate только если в обновлении есть новые файлы в database/migrations.
+
+4. Проверка и журналы
+
+  docker compose --env-file .env.production -f compose.yaml logs --tail=100 app
+  docker compose --env-file .env.production -f compose.yaml exec app php artisan about
+
+5. Важные правила
+
+- .env.production содержит пароли и ключи. Не отправляйте его в Git.
+- Не включайте APP_DEBUG=true на сервере.
+- Не включайте AUTO_INSTALL_PHP_DEPS и MIGRATE_ON_START.
+- Redis, storage и cache сохраняются в Docker volumes при обновлении контейнеров.
+- Для HTTPS используйте внешний Nginx/Caddy/reverse proxy.
+- Резервные копии MySQL выполняются средствами сервера базы данных.

@@ -63,8 +63,8 @@
     </style>
 </head>
 <body>
-<div class="box">
-    <h2>Вход</h2>
+<div class="box" data-photoauth-setup>
+    <h2>{{ ($firstSetup ?? false) ? 'Первоначальная настройка' : 'Вход' }}</h2>
 
 
     @if(session('err'))
@@ -77,9 +77,16 @@
 
     <form method="POST" action="{{ route('setup.auth.submit', [], false) }}">
         @csrf
+        @if($firstSetup ?? false)
+            <div class="status">Введите ключ первоначальной настройки, показанный установщиком.</div>
+            @error('setup_key') <div class="error">{{ $message }}</div> @enderror
+            <input type="password" name="setup_key" placeholder="Ключ первоначальной настройки" autocomplete="off">
+            <input type="submit" value="Открыть настройку">
+        @else
         <input type="text" name="login" placeholder="Логин" value="{{ old('login') }}" autofocus>
         <input type="password" name="password" placeholder="Пароль" required>
         <input type="submit" value="Войти">
+        @endif
     </form>
 </div>
 

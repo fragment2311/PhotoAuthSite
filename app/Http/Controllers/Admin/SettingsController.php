@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Admin;
 use App\Exceptions\UserVisibleException;
 use App\Http\Controllers\Controller;
 use App\Services\BootstrapConfigService;
+use App\Services\UpdateAgentClient;
+use App\Services\UpdateRuntime;
 use App\Services\LicenseService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
@@ -55,7 +57,30 @@ public function index(
         }
 
         try {
-            $this->validateAndSaveSettings($request, $store);
+            $failedChecks = array_values(array_map(
+                static fn (array $check): string => $check[1],
+                array_filter($this->setupChecks(), static fn (array $check): bool => !$check[0])
+            ));
+            if ($failedChecks !== []) {
+                throw ValidationException::withMessages([
+                    'setup_environment' => 'Установка не готова: ' . implode('; ', $failedChecks) . '.',
+                ]);
+            }
+            $pdo = $this->validateSetupDatabase($request, $store);
+            if (!$bootstrapConfig->hasMasterPassword() && trim((string) $request->input('setup_master_password')) === '') {
+                throw ValidationException::withMessages(['setup_master_password' => 'Создайте мастер-пароль для последующего доступа к настройке.']);
+            }
+            $pdo->beginTransaction();
+            try {
+                $this->createSetupAdmin($request, $pdo);
+                $this->validateAndSaveSettings($request, $store);
+                $pdo->commit();
+            } catch (Throwable $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                throw $e;
+            }
         } catch (ValidationException $e) {
             throw $e;
         } catch (Throwable $e) {
@@ -67,16 +92,21 @@ public function index(
             );
         }
 
-        return back()->with('ok', 'Настройки сохранены');
+        if ($bootstrapConfig->isConfigured()) {
+            $request->session()->forget('setup_access_granted');
+            $request->session()->regenerate();
+            return redirect()->route('login')->with('status', 'Первоначальная настройка завершена. Войдите под созданной учётной записью.');
+        }
+
+        return back()->with('ok', 'Настройки сохранены. Заполните оставшиеся обязательные параметры.');
     }
 
     public function setupAuth(Request $request, BootstrapConfigService $bootstrapConfig)
     {
-        $request->session()->forget('setup_access_granted');
-
         return response()->view('admin.settings.setup_auth', [
             'masterEnabled' => $bootstrapConfig->hasMasterPassword(),
             'masterLogin' => $bootstrapConfig->getMasterLogin(),
+            'firstSetup' => !$bootstrapConfig->isConfigured() && !$bootstrapConfig->hasMasterPassword(),
         ]);
     }
 
@@ -88,6 +118,16 @@ public function index(
 
         $login = trim((string) $request->input('login', ''));
         $password = (string) $request->input('password', '');
+
+        if (!$bootstrapConfig->isConfigured() && !$bootstrapConfig->hasMasterPassword()
+            && $bootstrapConfig->isValidSetupKey((string) $request->input('setup_key', ''))) {
+            $request->session()->regenerate();
+            $request->session()->put('setup_access_granted', true);
+            return redirect()->route('setup.settings');
+        }
+        if (!$bootstrapConfig->isConfigured() && !$bootstrapConfig->hasMasterPassword()) {
+            return back()->withErrors(['setup_key' => 'Неверный ключ первоначальной настройки.']);
+        }
 
         if ($password === '') {
             return back()->withErrors(['password' => 'Введите пароль'])->withInput();
@@ -184,12 +224,14 @@ public function index(
             'license' => $license,
             'setupMode' => $setupMode,
             'missingCritical' => $missingCritical,
+            'setupChecks' => $setupMode ? $this->setupChecks() : [],
         ]);
     }
 
 public function save(Request $request, AppSettingsFileStore $store)
 {
     try {
+        $this->validateSetupDatabase($request, $store);
         $this->validateAndSaveSettings($request, $store);
     } catch (ValidationException $e) {
         throw $e;
@@ -232,6 +274,7 @@ public function save(Request $request, AppSettingsFileStore $store)
         'db_name' => 'nullable|string',
         'db_user' => 'nullable|string',
         'db_pass' => 'nullable|string',
+        'app_url' => 'nullable|url:http,https|max:255',
 
         // Галерея/HTTP
         'gallery_root_dir' => 'nullable|string|max:255',
@@ -529,6 +572,108 @@ public function save(Request $request, AppSettingsFileStore $store)
         }
 
         return false;
+    }
+
+    private function validateSetupDatabase(Request $request, AppSettingsFileStore $store): \PDO
+    {
+        $request->validate([
+            'db_host' => ['required', 'string', 'max:255', 'not_regex:/[;\r\n]/'],
+            'db_port' => ['required', 'integer', 'between:1,65535'],
+            'db_name' => ['required', 'string', 'max:255', 'not_regex:/[;\r\n]/'],
+            'db_user' => ['required', 'string', 'max:255'],
+            'app_url' => ['required', 'url:http,https', 'max:255'],
+        ]);
+
+        $existing = $store->loadDecrypted();
+        $password = (string) $request->input('db_pass', '');
+        if ($password === '') {
+            $password = (string) ($existing['db_pass'] ?? '');
+        }
+
+        try {
+            $pdo = new \PDO(
+                sprintf('mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4',
+                    $request->input('db_host'), (int) $request->input('db_port'), $request->input('db_name')),
+                (string) $request->input('db_user'),
+                $password,
+                [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION, \PDO::ATTR_TIMEOUT => 4]
+            );
+            $tables = $pdo->query('SHOW TABLES')->fetchAll(\PDO::FETCH_COLUMN);
+        } catch (\Throwable $e) {
+            throw ValidationException::withMessages([
+                'db_host' => 'Не удалось подключиться к указанной базе. Проверьте адрес, порт и доступность сервера.',
+                'db_user' => 'Проверьте имя пользователя и пароль базы данных.',
+            ]);
+        }
+
+        $required = ['webusers', 'role', 'passage', 'location'];
+        $missing = array_diff($required, array_map('strtolower', $tables));
+        if ($missing !== []) {
+            throw ValidationException::withMessages([
+                'db_name' => 'В базе отсутствуют основные таблицы PhotoAuthApp: ' . implode(', ', $missing)
+                    . '. Укажите подготовленную базу проекта.',
+            ]);
+        }
+        return $pdo;
+    }
+
+    private function createSetupAdmin(Request $request, \PDO $pdo): void
+    {
+        $data = $request->validate([
+            'admin_login' => ['nullable', 'string', 'min:3', 'max:200'],
+            'admin_password' => ['nullable', 'string', 'min:8', 'confirmed'],
+        ]);
+        $login = trim((string) ($data['admin_login'] ?? ''));
+        $password = (string) ($data['admin_password'] ?? '');
+        if ($login === '' && $password === '') {
+            return;
+        }
+        if ($login === '' || $password === '') {
+            throw ValidationException::withMessages(['admin_login' => 'Для новой учётной записи укажите логин и пароль.']);
+        }
+
+        $role = $pdo->query("SELECT ID FROM role WHERE NameRole = 'Администратор' LIMIT 1")->fetchColumn();
+        if ($role === false) {
+            throw ValidationException::withMessages(['admin_login' => 'В базе не найдена роль «Администратор».']);
+        }
+        $exists = $pdo->prepare('SELECT 1 FROM webusers WHERE Login = ? LIMIT 1');
+        $exists->execute([$login]);
+        if ($exists->fetchColumn()) {
+            throw ValidationException::withMessages(['admin_login' => 'Этот логин уже занят.']);
+        }
+        try {
+            $insert = $pdo->prepare('INSERT INTO webusers (Login, Password, IdRole, IsActive, LastUpdate) VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP)');
+            $insert->execute([$login, \Illuminate\Support\Facades\Hash::make($password), $role]);
+        } catch (\PDOException $e) {
+            throw ValidationException::withMessages(['admin_login' => 'Не удалось создать администратора в выбранной базе. Проверьте права записи и состав таблицы webusers.']);
+        }
+    }
+
+    private function setupChecks(): array
+    {
+        $checks = [];
+        foreach (['pdo_mysql', 'mbstring', 'openssl', 'fileinfo'] as $extension) {
+            $checks[] = [extension_loaded($extension), 'Расширение PHP ' . $extension];
+        }
+        foreach ([storage_path(), storage_path('app'), storage_path('logs'), base_path('bootstrap/cache')] as $path) {
+            $checks[] = [is_dir($path) && is_writable($path), 'Запись в ' . $path];
+        }
+
+        $runtime = app(UpdateRuntime::class);
+        try {
+            $response = app(UpdateAgentClient::class)->request('GET', '/status');
+            $agentReady = $response['status'] === 200;
+        } catch (\Throwable $e) {
+            $agentReady = false;
+        }
+        $agentLabel = match ($runtime->mode() . '/' . $runtime->platform()) {
+            'docker/linux', 'docker/windows' => 'Агент Docker Compose (контейнер updater)',
+            'host/windows' => 'Агент Windows (задача PhotoAuthAppUpdater)',
+            default => 'Агент Linux (служба photoauthapp-updater.service)',
+        };
+        $checks[] = [$agentReady, $agentLabel . ($agentReady ? '' : ': проверьте запуск и связь с приложением')];
+
+        return $checks;
     }
 
     private function tryAdminAuth(string $login, string $password): bool

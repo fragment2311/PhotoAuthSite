@@ -1,24 +1,33 @@
+﻿param(
+    [string]$ProjectDirectory,
+    [string]$EnvironmentFile,
+    [string]$ComposerExecutable,
+    [ValidateRange(1, 65535)][int]$AgentPort = 19100,
+    [ValidateSet('iis', 'service')][string]$RestartKind,
+    [string]$RestartTarget,
+    [string]$HealthUrl
+)
 #Requires -RunAsAdministrator
 $ErrorActionPreference = 'Stop'
-$appDir = (Resolve-Path (Read-Host 'Полный путь к папке PhotoAuthApp с artisan и .git')).Path
+$appDir = (Resolve-Path $(if ($ProjectDirectory) { $ProjectDirectory } else { Read-Host 'Полный путь к папке PhotoAuthApp с artisan и .git' })).Path
 if (-not (Test-Path (Join-Path $appDir 'artisan')) -or -not (Test-Path (Join-Path $appDir '.git'))) {
     throw 'Указана не папка Git-проекта PhotoAuthApp.'
 }
-$envFile = Read-Host 'Файл окружения проекта [.env]'
+$envFile = if ($EnvironmentFile) { $EnvironmentFile } else { Read-Host 'Файл окружения проекта [.env]' }
 if (-not $envFile) { $envFile = '.env' }
 if (-not [IO.Path]::IsPathRooted($envFile)) { $envFile = Join-Path $appDir $envFile }
 if (-not (Test-Path $envFile)) { throw "Не найден файл окружения: $envFile" }
 
-$restartKind = Read-Host 'Перезапуск: IIS или SERVICE (Apache/XAMPP как служба)'
+$restartKind = if ($RestartKind) { $RestartKind } else { Read-Host 'Перезапуск: IIS или SERVICE (Apache/XAMPP как служба)' }
 $restartKind = $restartKind.Trim().ToLowerInvariant()
 if ($restartKind -notin @('iis', 'service')) { throw 'Укажите IIS или SERVICE.' }
-$restartTarget = Read-Host $(if ($restartKind -eq 'iis') { 'Имя пула IIS' } else { 'Имя службы Windows Apache/XAMPP' })
+$restartTarget = if ($RestartTarget) { $RestartTarget } else { Read-Host $(if ($restartKind -eq 'iis') { 'Имя пула IIS' } else { 'Имя службы Windows Apache/XAMPP' }) }
 if (-not $restartTarget -or $restartTarget -match '["`$;|&<>]') { throw 'Недопустимое имя службы или пула.' }
-$healthUrl = Read-Host 'Адрес проверки PhotoAuthApp [http://127.0.0.1/login]'
+$healthUrl = if ($HealthUrl) { $HealthUrl } else { Read-Host 'Адрес проверки PhotoAuthApp [http://127.0.0.1/login]' }
 if (-not $healthUrl) { $healthUrl = 'http://127.0.0.1/login' }
 $python = (Get-Command python.exe -ErrorAction Stop).Source
 $php = (Get-Command php.exe -ErrorAction Stop).Source
-$composer = (Get-Command composer.bat -ErrorAction SilentlyContinue).Source
+$composer = if ($ComposerExecutable) { (Resolve-Path -LiteralPath $ComposerExecutable).Path } else { (Get-Command composer.bat -ErrorAction SilentlyContinue).Source }
 if (-not $composer) { $composer = (Get-Command composer.exe -ErrorAction Stop).Source }
 $git = (Get-Command git.exe -ErrorAction Stop).Source
 $pythonVersion = (& $python --version 2>&1 | Out-String).Trim()
@@ -64,6 +73,7 @@ $settings = @{
     UPDATE_AGENT_TOKEN = $token
     UPDATE_MODE = 'host'
     UPDATE_AGENT_HOST = '127.0.0.1'
+    UPDATE_AGENT_PORT = "$AgentPort"
     UPDATE_RESTART_KIND = $restartKind
     UPDATE_RESTART_TARGET = $restartTarget
     UPDATE_HEALTH_URL = $healthUrl
@@ -92,4 +102,4 @@ if ($restartKind -eq 'iis') {
 } else {
     Restart-Service -Name $restartTarget -Force
 }
-Write-Host 'Агент ОС установлен и запущен; адрес доступен только на этом компьютере: 127.0.0.1:19100.'
+Write-Host "Агент ОС установлен и запущен; адрес доступен только на этом компьютере: 127.0.0.1:$AgentPort."

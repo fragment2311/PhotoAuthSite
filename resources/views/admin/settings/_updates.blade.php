@@ -18,6 +18,7 @@
         Перед запуском сохраняется только структура БД. Копия не содержит записи; миграция может изменить или удалить данные. Продолжайте только после ознакомления со списком.
       </div>
     </div>
+    <div class="update-warning" id="photoauth-update-destructive" hidden>Эти миграции могут изменить или удалить существующие записи: <span id="photoauth-update-destructive-names"></span>. Снимок структуры не восстановит данные.</div>
   </div>
   <div class="actions">
     <button type="button" class="settings-btn" id="photoauth-update-check" hidden>Проверить обновления</button>
@@ -43,6 +44,8 @@
   const changesNode = document.getElementById('photoauth-update-changes');
   const migrationsBlock = document.getElementById('photoauth-update-migrations-block');
   const migrationsNode = document.getElementById('photoauth-update-migrations');
+  const destructiveNode = document.getElementById('photoauth-update-destructive');
+  const destructiveNames = document.getElementById('photoauth-update-destructive-names');
   const checkButton = document.getElementById('photoauth-update-check');
   const startButton = document.getElementById('photoauth-update-start');
   const cancelButton = document.getElementById('photoauth-update-cancel');
@@ -99,6 +102,8 @@
     fillList(changesNode, data.changes, data.available ? 'Изменения не описаны.' : 'Список изменений пуст.');
     fillList(migrationsNode, data.migrations, 'Миграций нет.');
     migrationsBlock.hidden = !(data.migrations && data.migrations.length);
+    destructiveNode.hidden = !(data.destructive_migrations && data.destructive_migrations.length);
+    destructiveNames.textContent = (data.destructive_migrations || []).join(', ');
     startButton.hidden = !data.available;
     checkButton.hidden = Boolean(data.available);
     cancelButton.hidden = !data.available;
@@ -208,6 +213,10 @@
     if (hasMigrations && !window.confirm(
       'В обновлении есть миграции. Будет сохранена только структура базы, без записей. Миграции могут изменить или удалить данные. Запустить обновление и миграции?'
     )) return;
+    const hasDataChanges = Boolean(checkData.destructive_migrations && checkData.destructive_migrations.length);
+    if (hasDataChanges && !window.confirm(
+      'Дополнительное подтверждение: указанные миграции могут изменить или удалить записи. Копия структуры не восстановит эти данные. Продолжить?'
+    )) return;
 
     startButton.disabled = true;
     checkButton.disabled = true;
@@ -215,7 +224,8 @@
     try {
       await request(root.dataset.startUrl, 'POST', {
         target_sha: checkData.available_sha,
-        run_migrations: hasMigrations
+        run_migrations: hasMigrations,
+        confirm_data_changes: hasDataChanges
       });
       poll();
     } catch (error) {

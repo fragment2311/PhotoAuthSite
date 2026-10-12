@@ -35,6 +35,7 @@ services:
       UPDATE_MODE: docker
       UPDATE_AGENT_TOKEN: ${UPDATE_AGENT_TOKEN:-}
       UPDATE_BRANCH: main
+      ENV_FILE: ${APP_ENV_FILE:-.env}
     volumes:
       - .:/workspace
       - /var/run/docker.sock:/var/run/docker.sock

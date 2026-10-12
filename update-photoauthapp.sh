@@ -86,8 +86,7 @@ if [[ -n "$MIGRATIONS_CHANGED" ]]; then
   mkdir -p "$BACKUP_DIR"
   chmod 700 "$BACKUP_DIR"
   SCHEMA_BACKUP="$BACKUP_DIR/schema-$(date -u +%Y%m%dT%H%M%SZ).sql"
-  if ! docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" run --rm --no-deps app sh -lc \
-    'MYSQL_PWD="$REMOTE_DB_PASSWORD" mysqldump --no-data --skip-lock-tables --no-tablespaces --host="$REMOTE_DB_HOST" --port="$REMOTE_DB_PORT" --user="$REMOTE_DB_USERNAME" "$REMOTE_DB_DATABASE"' > "$SCHEMA_BACKUP"; then
+  if ! docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" run --rm --no-deps --entrypoint php app update-agent/dump-schema.php - > "$SCHEMA_BACKUP"; then
     rm -f "$SCHEMA_BACKUP"
     restore_before_migrations
     echo "Не удалось сохранить схему MySQL. Миграции не запускались."

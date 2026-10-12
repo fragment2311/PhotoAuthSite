@@ -19,7 +19,11 @@
 /public/build
 /public/hot
 /public/storage
+/public/uploads/
 /storage/*.key
+/storage/app/
+/storage/framework/
+/storage/logs/
 /storage/logs/*.log
 /storage/pail
 /vendor

@@ -87,10 +87,19 @@ def update_check() -> dict:
         ["git", "log", "--format=%h%x09%s", "-20", f"{current}..{available}"]
     ) if current != available else ""
     migrations_raw = run(
-        ["git", "diff", "--name-only", current, available, "--", "database/migrations"]
+        ["git", "diff", "--diff-filter=AMR", "--name-only", current, available, "--", "database/migrations"]
     ) if current != available else ""
     commits = [line.split("\t", 1)[-1] for line in commits_raw.splitlines() if line]
     migrations = [line for line in migrations_raw.splitlines() if line]
+    destructive_migrations = []
+    for migration in migrations:
+        if not migration.endswith('.php'):
+            continue
+        source = run(['git', 'show', f'{available}:{migration}'])
+        up = re.split(r'function\s+down\s*\(', source, maxsplit=1, flags=re.I)[0]
+        up = re.split(r'function\s+up\s*\(', up, maxsplit=1, flags=re.I)[-1]
+        if re.search(r'\b(?:DB|PDO)::|\bSchema::(?:table|drop|rename)\s*\(|\b(?:drop|dropIfExists|truncate|delete|update|rename|change)\s*\(|\bDROP\s+(?:TABLE|COLUMN|DATABASE)|\bDELETE\s+FROM\b|\bTRUNCATE\b|\bUPDATE\s+[`\w]+|\bALTER\s+TABLE\b', up, re.I):
+            destructive_migrations.append(migration)
     return {
         "current_sha": current,
         "source_sha": source_head,
@@ -100,13 +109,14 @@ def update_check() -> dict:
         "available": current != available,
         "changes": commits,
         "migrations": migrations,
+        "destructive_migrations": destructive_migrations,
         "checked_at": int(time.time()),
         "runtime_mode": MODE,
         "runtime_platform": "windows" if os.name == "nt" else "linux",
     }
 
 
-def run_update(target_sha: str, run_migrations: bool, job_id: str) -> None:
+def run_update(target_sha: str, run_migrations: bool, confirm_data_changes: bool, job_id: str) -> None:
     log = ""
     migration_started = False
     try:
@@ -116,6 +126,8 @@ def run_update(target_sha: str, run_migrations: bool, job_id: str) -> None:
             raise RuntimeError("Ветка GitHub изменилась после проверки. Проверьте обновления ещё раз.")
         if check["migrations"] and not run_migrations:
             raise RuntimeError("Для этой версии нужны миграции. Подтвердите их отдельным предупреждением.")
+        if check["destructive_migrations"] and not confirm_data_changes:
+            raise RuntimeError("Для миграций, изменяющих данные, требуется дополнительное подтверждение.")
 
         set_state(job={"id": job_id, "status": "running", "stage": "установка", "target_sha": target_sha, "run_migrations": run_migrations, "log": ""})
         env = os.environ.copy()
@@ -255,6 +267,7 @@ class Handler(BaseHTTPRequestHandler):
                 data = self._body()
                 target_sha = str(data.get("target_sha", ""))
                 run_migrations = data.get("run_migrations") is True
+                confirm_data_changes = data.get("confirm_data_changes") is True
                 if not SHA_RE.fullmatch(target_sha):
                     return self._json(422, {"error": "Неверный идентификатор версии"})
                 check = STATE.get("check") or {}
@@ -262,11 +275,13 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(409, {"error": "Сначала проверьте доступную версию ещё раз"})
                 if check.get("migrations") and not run_migrations:
                     return self._json(409, {"error": "Для запуска миграций требуется отдельное подтверждение"})
+                if check.get("destructive_migrations") and not confirm_data_changes:
+                    return self._json(409, {"error": "Для изменения или удаления записей требуется дополнительное подтверждение"})
                 if not LOCK.acquire(blocking=False):
                     return self._json(409, {"error": "Обновление уже выполняется"})
                 job_id = str(uuid.uuid4())
                 set_state(job={"id": job_id, "status": "queued", "stage": "в очереди", "target_sha": target_sha, "run_migrations": run_migrations, "log": ""})
-                threading.Thread(target=run_update, args=(target_sha, run_migrations, job_id), daemon=True).start()
+                threading.Thread(target=run_update, args=(target_sha, run_migrations, confirm_data_changes, job_id), daemon=True).start()
                 return self._json(202, {"job_id": job_id, "status": "queued"})
             except (ValueError, json.JSONDecodeError) as exc:
                 return self._json(400, {"error": str(exc)})

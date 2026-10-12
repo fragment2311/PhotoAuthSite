@@ -70,6 +70,7 @@ class AppServiceProvider extends ServiceProvider
                 'app.photos_not_found_path' => $photosNotFoundPath,
                 'app.photos_http_scheme' => $photosHttpScheme,
                 'license.client_id' => $licenseClientId,
+                'app.url' => (string) $pick('app_url', config('app.url')),
 
                 'database.connections.remote_mysql.host' => (string) $pick('db_host', config('database.connections.remote_mysql.host')),
                 'database.connections.remote_mysql.port' => (string) $pick('db_port', config('database.connections.remote_mysql.port')),

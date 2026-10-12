@@ -7,7 +7,7 @@ $appRoot = dirname(__DIR__);
 $app = require $appRoot . '/bootstrap/app.php';
 $app->make(Kernel::class)->bootstrap();
 
-if (config('database.default') !== 'mysql') {
+if (!in_array(config('database.connections.' . config('database.default') . '.driver'), ['mysql', 'mariadb'], true)) {
     fwrite(STDERR, "Создание копии структуры поддерживает только MySQL.\n");
     exit(2);
 }
@@ -34,6 +34,19 @@ foreach ($tables as $tableRow) {
 }
 $lines[] = 'SET FOREIGN_KEY_CHECKS=1;';
 
-if (file_put_contents($destination, implode("\n", $lines) . "\n", LOCK_EX) === false) {
+$contents = implode("\n", $lines) . "\n";
+if ($destination === '-') {
+    $written = 0;
+    while ($written < strlen($contents)) {
+        $chunk = fwrite(STDOUT, substr($contents, $written));
+        if ($chunk === false || $chunk === 0) {
+            break;
+        }
+        $written += $chunk;
+    }
+} else {
+    $written = file_put_contents($destination, $contents, LOCK_EX);
+}
+if ($written === false || $written !== strlen($contents)) {
     throw new RuntimeException('Не удалось сохранить копию структуры.');
 }

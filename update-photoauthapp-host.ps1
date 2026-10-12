@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 $appDir = if ($env:APP_DIR) { $env:APP_DIR } else { $env:PHOTOAUTHAPP_DIR }
 $targetSha = $env:TARGET_SHA
 $currentSha = $env:CURRENT_SHA

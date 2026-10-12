@@ -239,7 +239,7 @@
   <div class="settings-container">
 
     @if(session('ok'))
-      <div class="alert alert-ok">{{ session('ok') }}</div>
+      <div class="alert alert-ok">{{ session('ok') }} @if($setupMode ?? false)<a href="{{ route('login') }}">Открыть вход</a>@endif</div>
     @endif
 
     @if(session('err'))
@@ -252,6 +252,17 @@
         <ul style="margin:8px 0 0 18px;">
           @foreach(($missingCritical ?? []) as $field)
             <li>{{ $field }}</li>
+          @endforeach
+        </ul>
+      </div>
+    @endif
+
+    @if($setupMode ?? false)
+      <div class="settings-card">
+        <h2>Проверка установки</h2>
+        <ul>
+          @foreach($setupChecks ?? [] as [$passed, $label])
+            <li style="color:{{ $passed ? '#166534' : '#b91c1c' }}">{{ $passed ? 'Готово' : 'Требуется проверка' }}: {{ $label }}</li>
           @endforeach
         </ul>
       </div>
@@ -297,6 +308,7 @@
     @endif
 
     <div class="settings-card">
+      @if(!($setupMode ?? false))
       <h2>Лицензия</h2>
 
       <div class="row" style="align-items:center; margin-bottom:.35rem;">
@@ -359,6 +371,10 @@
       </form>
 
       <div class="divider"></div>
+      @else
+        <h2>Первоначальная настройка PhotoAuthApp</h2>
+        <p class="help">Укажите адрес приложения и подготовленную базу, затем создайте доступ администратора и настройте нужные интеграции. Существующие записи и файлы сохраняются.</p>
+      @endif
 
       <form method="POST" action="{{ ($setupMode ?? false) ? route('setup.settings.save') : route('admin.settings.save') }}" enctype="multipart/form-data">
         @csrf
@@ -380,30 +396,40 @@
         </div>
 
         <h2>База данных</h2>
+        <div class="row"><div class="field" style="min-width:420px">
+          <label for="app_url">Адрес приложения</label>
+          <input id="app_url" name="app_url" value="{{ old('app_url', $s['app_url'] ?? config('app.url')) }}" placeholder="https://example.com">
+          @error('app_url') <div class="help" style="color:#b91c1c">{{ $message }}</div> @enderror
+        </div></div>
         <div class="row">
           <div class="field">
             <label for="db_host">Host</label>
-            <input id="db_host" name="db_host" value="{{ $s['db_host'] ?? '' }}">
+            <input id="db_host" name="db_host" value="{{ old('db_host', $s['db_host'] ?? '') }}">
+            @error('db_host') <div class="help" style="color:#b91c1c">{{ $message }}</div> @enderror
           </div>
 
           <div class="field" style="min-width:120px;">
             <label for="db_port">Port</label>
-            <input id="db_port" name="db_port" value="{{ $s['db_port'] ?? '3306' }}">
+            <input id="db_port" name="db_port" value="{{ old('db_port', $s['db_port'] ?? '3306') }}">
+            @error('db_port') <div class="help" style="color:#b91c1c">{{ $message }}</div> @enderror
           </div>
 
           <div class="field">
             <label for="db_name">Database</label>
-            <input id="db_name" name="db_name" value="{{ $s['db_name'] ?? '' }}">
+            <input id="db_name" name="db_name" value="{{ old('db_name', $s['db_name'] ?? '') }}">
+            @error('db_name') <div class="help" style="color:#b91c1c">{{ $message }}</div> @enderror
           </div>
 
           <div class="field">
             <label for="db_user">User</label>
-            <input id="db_user" name="db_user" value="{{ $s['db_user'] ?? '' }}">
+            <input id="db_user" name="db_user" value="{{ old('db_user', $s['db_user'] ?? '') }}">
+            @error('db_user') <div class="help" style="color:#b91c1c">{{ $message }}</div> @enderror
           </div>
 
           <div class="field">
             <label for="db_pass">Password</label>
-            <input id="db_pass" type="password" name="db_pass" value="{{ $s['db_pass'] ?? '' }}">
+            <input id="db_pass" type="password" name="db_pass" value="" autocomplete="new-password" placeholder="Оставьте пустым, чтобы сохранить прежний пароль">
+            @error('db_pass') <div class="help" style="color:#b91c1c">{{ $message }}</div> @enderror
           </div>
         </div>
 
@@ -417,13 +443,25 @@
           <div class="field" style="min-width:320px;">
             <label for="setup_master_password">Мастер-пароль</label>
             <input id="setup_master_password" type="password" name="setup_master_password" placeholder="Оставьте пустым, чтобы не менять">
+            @error('setup_master_password') <div class="help" style="color:#b91c1c">{{ $message }}</div> @enderror
           </div>
 
           <div class="field" style="min-width:320px;">
             <label for="setup_master_password_confirmation">Подтверждение мастер-пароля</label>
             <input id="setup_master_password_confirmation" type="password" name="setup_master_password_confirmation" placeholder="Повторите пароль">
+            @error('setup_master_password_confirmation') <div class="help" style="color:#b91c1c">{{ $message }}</div> @enderror
           </div>
         </div>
+
+        @if($setupMode ?? false)
+          <h2>Администратор приложения</h2>
+          <p class="help">При необходимости создайте новую учётную запись. Существующие пользователи сохраняются.</p>
+          <div class="row">
+            <div class="field"><label for="admin_login">Логин</label><input id="admin_login" name="admin_login" value="{{ old('admin_login') }}">@error('admin_login')<div class="help" style="color:#b91c1c">{{ $message }}</div>@enderror</div>
+            <div class="field"><label for="admin_password">Пароль</label><input id="admin_password" type="password" name="admin_password" autocomplete="new-password">@error('admin_password')<div class="help" style="color:#b91c1c">{{ $message }}</div>@enderror</div>
+            <div class="field"><label for="admin_password_confirmation">Подтверждение пароля</label><input id="admin_password_confirmation" type="password" name="admin_password_confirmation" autocomplete="new-password">@error('admin_password_confirmation')<div class="help" style="color:#b91c1c">{{ $message }}</div>@enderror</div>
+          </div>
+        @endif
 
         <h2>Галерея и HTTP-источник</h2>
         <div class="row">
@@ -499,7 +537,7 @@
 
             <div class="field">
               <label for="photo_ftps_pass">Password</label>
-              <input id="photo_ftps_pass" type="password" name="photo_ftps_pass" value="{{ $s['photo_ftps_pass'] ?? '' }}">
+              <input id="photo_ftps_pass" type="password" name="photo_ftps_pass" value="" autocomplete="new-password" placeholder="Оставьте пустым, чтобы сохранить прежний пароль">
             </div>
           </div>
 
@@ -576,6 +614,7 @@
           </div>
         </div>
 
+        @if(!($setupMode ?? false))
         <div class="row" style="margin-top:.5rem;">
           <div class="field" style="min-width:420px;">
             <a
@@ -587,10 +626,11 @@
             </a>
           </div>
         </div>
+        @endif
 
         <div class="actions">
-          <button type="submit" class="settings-btn">Сохранить</button>
-          <a href="{{ url()->previous() }}" class="settings-btn settings-btn-secondary">Назад</a>
+          <button type="submit" class="settings-btn">{{ ($setupMode ?? false) ? 'Проверить и завершить настройку' : 'Сохранить' }}</button>
+          @if(!($setupMode ?? false))<a href="{{ url()->previous() }}" class="settings-btn settings-btn-secondary">Назад</a>@endif
         </div>
       </form>
     </div>

@@ -24,11 +24,13 @@ class UpdatesController extends Controller
         $validated = $request->validate([
             'target_sha' => ['required', 'regex:/^[a-f0-9]{40}$/'],
             'run_migrations' => ['required', 'boolean'],
+            'confirm_data_changes' => ['required', 'boolean'],
         ]);
 
         return $this->forward($agent, 'POST', '/start', [
             'target_sha' => $validated['target_sha'],
             'run_migrations' => (bool) $validated['run_migrations'],
+            'confirm_data_changes' => (bool) $validated['confirm_data_changes'],
         ]);
     }
 

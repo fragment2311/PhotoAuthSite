@@ -75,7 +75,6 @@ class FtpAuthController extends Controller
                 request()->session()->regenerateToken();
             }
 
-            request()->session()->forget('setup_access_granted');
             return redirect()->route('setup.auth', request()->only('setup_key'));
         }
 
@@ -113,7 +112,6 @@ class FtpAuthController extends Controller
                 $request->session()->regenerateToken();
             }
 
-            $request->session()->forget('setup_access_granted');
             return redirect()->route('setup.auth', $request->only('setup_key'));
         }
 

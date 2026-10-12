@@ -15,19 +15,31 @@ if [[ ! -f "$APP_DIR/artisan" || ! -d "$APP_DIR/.git" ]]; then
   echo "Укажите папку проекта PhotoAuthApp с файлами artisan и .git."
   exit 2
 fi
-read -r -p "Имя службы systemd для перезапуска PHP/Apache (например php8.4-fpm.service): " RESTART_SERVICE
+RESTART_SERVICE="${2:-}"
+if [[ -z "$RESTART_SERVICE" ]]; then
+  read -r -p "Имя службы systemd для перезапуска PHP/Apache (например php8.4-fpm.service): " RESTART_SERVICE
+fi
 if [[ ! "$RESTART_SERVICE" =~ ^[A-Za-z0-9_.@:-]+\.service$ ]]; then
   echo "Укажите полное имя службы systemd, оканчивающееся на .service."
   exit 2
 fi
 systemctl cat "$RESTART_SERVICE" >/dev/null 2>&1 || { echo "Служба $RESTART_SERVICE не найдена в systemd."; exit 2; }
-read -r -p "Адрес проверки приложения [http://127.0.0.1/login]: " HEALTH_URL
+HEALTH_URL="${3:-}"
+if [[ -z "$HEALTH_URL" ]]; then
+  read -r -p "Адрес проверки приложения [http://127.0.0.1/login]: " HEALTH_URL
+fi
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1/login}"
 if [[ ! "$HEALTH_URL" =~ ^https?://[A-Za-z0-9._:/?-]+$ ]]; then
   echo "Укажите корректный URL проверки приложения без пробелов."
   exit 2
 fi
-read -r -p "Файл окружения проекта [.env]: " ENV_NAME
+AGENT_PORT="${5:-19100}"
+[[ "$AGENT_PORT" =~ ^[0-9]+$ ]] && (( 10#$AGENT_PORT >= 1 && 10#$AGENT_PORT <= 65535 )) || { echo 'Порт агента должен быть от 1 до 65535.'; exit 2; }
+AGENT_PORT="$((10#$AGENT_PORT))"
+ENV_NAME="${4:-}"
+if [[ -z "$ENV_NAME" ]]; then
+  read -r -p "Файл окружения проекта [.env]: " ENV_NAME
+fi
 ENV_NAME="${ENV_NAME:-.env}"
 ENV_FILE="$ENV_NAME"
 [[ "$ENV_FILE" = /* ]] || ENV_FILE="$APP_DIR/$ENV_FILE"
@@ -76,7 +88,7 @@ umask 077
   printf 'PHOTOAUTHAPP_DIR=%s\n' "$(systemd_quote "$APP_DIR")"
   printf 'UPDATE_STATE_DIR=%s\n' "$(systemd_quote "$STATE_DIR")"
   printf 'UPDATE_AGENT_TOKEN=%s\n' "$UPDATE_AGENT_TOKEN"
-  printf 'UPDATE_MODE=host\nUPDATE_AGENT_HOST=127.0.0.1\n'
+  printf 'UPDATE_MODE=host\nUPDATE_AGENT_HOST=127.0.0.1\nUPDATE_AGENT_PORT=%s\n' "$AGENT_PORT"
   printf 'UPDATE_RESTART_TARGET=%s\n' "$RESTART_SERVICE"
   printf 'UPDATE_HEALTH_URL=%s\n' "$(systemd_quote "$HEALTH_URL")"
 } > "$ENV_FILE"
@@ -112,4 +124,4 @@ systemctl enable --now photoauthapp-updater.service
 runuser -u "$APP_USER" -- php "$APP_DIR/artisan" config:clear
 systemctl restart "$RESTART_SERVICE"
 unset UPDATE_AGENT_TOKEN
-echo "Агент запущен как служба ОС и слушает только 127.0.0.1:19100. Токен добавлен в .env проекта."
+echo "Агент запущен как служба ОС и слушает только 127.0.0.1:$AGENT_PORT. Токен добавлен в .env проекта."

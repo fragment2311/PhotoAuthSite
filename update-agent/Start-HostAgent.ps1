@@ -1,4 +1,4 @@
-param([Parameter(Mandatory = $true)][string]$ConfigPath)
+﻿param([Parameter(Mandatory = $true)][string]$ConfigPath)
 $ErrorActionPreference = 'Stop'
 $settings = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
 foreach ($entry in $settings.PSObject.Properties) {

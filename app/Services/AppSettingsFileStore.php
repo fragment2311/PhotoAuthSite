@@ -55,9 +55,16 @@ class AppSettingsFileStore
     public function save(array $plainData, bool $keepEncryptedSecrets = true): void
     {
         $current = $this->loadEncrypted();
+        $submitted = array_keys($plainData);
+        // A settings form edits only the fields it submits. Preserve integrations
+        // and future settings that are absent from this request.
+        $plainData = array_replace($current, $plainData);
 
         // если поле секрета пустое — оставляем старое зашифрованное
         foreach ($this->secretKeys() as $k) {
+            if (!in_array($k, $submitted, true)) {
+                continue;
+            }
             $incoming = $plainData[$k] ?? null;
 
             if ($keepEncryptedSecrets && (is_null($incoming) || $incoming === '')) {
@@ -75,8 +82,10 @@ class AppSettingsFileStore
             }
         }
 
-        $json = json_encode($plainData, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
-        Storage::put($this->path, $json ?: "{}");
+        $json = json_encode($plainData, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR);
+        if (!Storage::put($this->path, $json)) {
+            throw new \RuntimeException('Не удалось записать файл настроек.');
+        }
     }
 
     private function loadRaw(): array

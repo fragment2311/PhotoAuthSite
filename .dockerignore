@@ -14,6 +14,9 @@ storage
 
 tests
 update-agent
+!update-agent/
+update-agent/*
+!update-agent/dump-schema.php
 update-agent-backups
 *.md
 *.log

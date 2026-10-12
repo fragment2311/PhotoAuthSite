@@ -13,6 +13,43 @@ if [[ "$MODE" == auto ]]; then
   fi
 fi
 [[ "$MODE" == docker || "$MODE" == host ]] || { echo 'Режим должен быть docker или host.'; exit 2; }
+if [[ "$MODE" == docker ]]; then
+  command -v docker >/dev/null || { echo 'Docker не найден. Установите и запустите Docker либо выберите режим host.'; exit 2; }
+  docker compose version >/dev/null 2>&1 || { echo 'Docker Compose недоступен. Проверьте установку Docker.'; exit 2; }
+  docker info --format '{{.ServerVersion}}' >/dev/null 2>&1 || { echo 'Движок Docker не отвечает. Запустите Docker и повторите установку.'; exit 2; }
+
+  declare -A required_images=()
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^[[:space:]]*FROM[[:space:]]+([^[:space:]]+) ]]; then
+      [[ "${BASH_REMATCH[1]}" == scratch ]] || required_images["${BASH_REMATCH[1]}"]=1
+    elif [[ "$line" =~ ^[[:space:]]*COPY[[:space:]]+--from=([^[:space:]]+) ]]; then
+      image="${BASH_REMATCH[1]}"
+      if [[ "$image" == *:* || "$image" == */* ]]; then required_images["$image"]=1; fi
+    fi
+  done < <(cat "$APP_DIR/Dockerfile" "$APP_DIR/update-agent/Dockerfile")
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^[[:space:]]*image:[[:space:]]*([^[:space:]#]+) ]]; then
+      image="${BASH_REMATCH[1]}"
+      if [[ "$image" != *'$'* ]]; then required_images["$image"]=1; fi
+    fi
+  done < "$APP_DIR/compose.yaml"
+  (( ${#required_images[@]} > 0 )) || { echo 'Не удалось определить Docker-образы проекта.'; exit 2; }
+  missing_images=()
+  echo 'Проверяю наличие Docker-образов на компьютере...'
+  for image in "${!required_images[@]}"; do
+    if docker image inspect "$image" >/dev/null 2>&1; then
+      echo "Есть: $image"
+    else
+      echo "Нужно скачать: $image"
+      missing_images+=("$image")
+    fi
+  done
+  if (( ${#missing_images[@]} > 0 )); then
+    read -r -p "Отсутствует образов: ${#missing_images[@]}. Разрешить Docker скачать их при запуске? y/N: " download_choice
+    [[ "$download_choice" =~ ^[Yy]$ ]] || { echo 'Установка остановлена до скачивания Docker-образов.'; exit 2; }
+  fi
+  echo 'При первой сборке Docker также может скачать пакеты внутри образов.'
+fi
 if [[ "$MODE" == host ]] && { ! command -v openssl >/dev/null || ! command -v curl >/dev/null; }; then
   read -r -p 'Не найдены OpenSSL или curl. Установить через apt-get? y/N: ' install_choice
   [[ "$install_choice" =~ ^[Yy]$ ]] || { echo 'Установка остановлена до появления обязательных компонентов.'; exit 2; }

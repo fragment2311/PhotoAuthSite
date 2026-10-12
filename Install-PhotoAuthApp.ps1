@@ -1,6 +1,29 @@
 ﻿param([ValidateSet('auto', 'docker', 'host')][string]$Mode = 'auto')
 $ErrorActionPreference = 'Stop'
 $appDir = Split-Path -Parent $PSCommandPath
+
+function Assert-DockerReady {
+    $docker = Get-Command docker.exe -ErrorAction SilentlyContinue
+    if (-not $docker) { throw 'Docker не найден. Установите и запустите Docker Desktop либо выберите установку без Docker.' }
+    & $docker.Source compose version *> $null
+    if ($LASTEXITCODE -ne 0) { throw 'Docker Compose недоступен. Проверьте установку Docker Desktop.' }
+    & $docker.Source info --format '{{.ServerVersion}}' *> $null
+    if ($LASTEXITCODE -ne 0) { throw 'Docker установлен, но его движок не отвечает. Запустите Docker Desktop, дождитесь запуска и повторите установку.' }
+    return $docker.Source
+}
+
+if ($Mode -eq 'auto') {
+    $docker = Get-Command docker.exe -ErrorAction SilentlyContinue
+    if ($docker) {
+        & $docker.Source compose version *> $null
+        if ($LASTEXITCODE -eq 0) {
+            $choice = Read-Host 'Обнаружен Docker Compose. Выберите режим: D (Docker) или W (Windows без Docker) [D]'
+            $Mode = if ($choice -match '^[Ww]$') { 'host' } else { 'docker' }
+        } else { Write-Host 'Docker Compose недоступен. Выбран режим Windows без Docker.'; $Mode = 'host' }
+    } else { Write-Host 'Docker не найден. Выбран режим Windows без Docker.'; $Mode = 'host' }
+}
+if ($Mode -eq 'docker') { $null = Assert-DockerReady }
+
 if (-not (Test-Path (Join-Path $appDir 'artisan')) -or -not (Test-Path (Join-Path $appDir '.git'))) {
     $defaultTarget = Join-Path $appDir 'PhotoAuthApp'
     $enteredTarget = Read-Host "Куда установить PhotoAuthApp? [$defaultTarget]"
@@ -110,6 +133,38 @@ function Read-HttpPort([string]$Default) {
     return $number
 }
 
+function Confirm-DockerImages([string]$ProjectPath, [string]$DockerPath) {
+    $images = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($relativePath in @('Dockerfile', 'update-agent\Dockerfile')) {
+        $dockerfile = Join-Path $ProjectPath $relativePath
+        foreach ($line in Get-Content -LiteralPath $dockerfile) {
+            if ($line -match '^\s*FROM\s+([^\s]+)' -and $Matches[1] -ne 'scratch') {
+                $null = $images.Add($Matches[1])
+            } elseif ($line -match '^\s*COPY\s+--from=([^\s]+)' -and $Matches[1] -match '[:/]') {
+                $null = $images.Add($Matches[1])
+            }
+        }
+    }
+    foreach ($line in Get-Content -LiteralPath (Join-Path $ProjectPath 'compose.yaml')) {
+        if ($line -match '^\s*image:\s*([^\s#]+)' -and $Matches[1] -notmatch '\$') {
+            $null = $images.Add($Matches[1])
+        }
+    }
+    if ($images.Count -eq 0) { throw 'Не удалось определить Docker-образы проекта. Проверьте Dockerfile и compose.yaml.' }
+    $missing = @()
+    Write-Host 'Проверяю наличие Docker-образов на компьютере...'
+    foreach ($image in ($images | Sort-Object)) {
+        & $DockerPath image inspect $image *> $null
+        if ($LASTEXITCODE -eq 0) { Write-Host "Есть: $image" }
+        else { Write-Host "Нужно скачать: $image"; $missing += $image }
+    }
+    if ($missing.Count -gt 0) {
+        $answer = Read-Host "Отсутствует образов: $($missing.Count). Разрешить Docker скачать их при запуске? Y/N [N]"
+        if ($answer -notmatch '^[Yy]$') { throw 'Установка остановлена до скачивания Docker-образов.' }
+    }
+    Write-Host 'При первой сборке Docker также может скачать пакеты внутри образов.'
+}
+
 function Install-MissingWindowsComponents {
     $missing = @()
     foreach ($item in @(@('php.exe', 'PHP.PHP.8.4'), @('python.exe', 'Python.Python.3.13'), @('git.exe', 'Git.Git'))) {
@@ -157,17 +212,6 @@ function Install-MissingWindowsComponents {
     }
 }
 
-if ($Mode -eq 'auto') {
-    $docker = Get-Command docker.exe -ErrorAction SilentlyContinue
-    if ($docker) {
-        & $docker.Source compose version *> $null
-        if ($LASTEXITCODE -eq 0) {
-            $choice = Read-Host 'Обнаружен Docker Compose. Выберите режим: D (Docker) или W (Windows без Docker) [D]'
-            $Mode = if ($choice -match '^[Ww]$') { 'host' } else { 'docker' }
-        } else { $Mode = 'host' }
-    } else { $Mode = 'host' }
-}
-
 if ($Mode -eq 'host') {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = [Security.Principal.WindowsPrincipal]::new($identity)
@@ -177,6 +221,8 @@ if ($Mode -eq 'host') {
         exit $child.ExitCode
     }
 }
+
+if ($Mode -eq 'docker') { Confirm-DockerImages $appDir (Assert-DockerReady) }
 
 $envName = if ($Mode -eq 'docker' -and -not (Test-Path (Join-Path $appDir '.env')) -and (Test-Path (Join-Path $appDir '.env.production'))) { '.env.production' } else { '.env' }
 if ($Mode -eq 'docker' -and (Test-Path (Join-Path $appDir '.env')) -and (Test-Path (Join-Path $appDir '.env.production'))) {
